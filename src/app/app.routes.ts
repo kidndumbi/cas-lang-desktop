@@ -1,11 +1,19 @@
 import { Routes } from '@angular/router';
-import { SettingsComponent } from './settings/settings.component';
 import { PracticeComponent } from './language-learning/components/practice.component';
-import { VocabularyListComponent } from './language-learning/components/vocabulary-list.component';
+import { VocabularyPageComponent } from './vocabulary/vocabulary-page.component';
+import { AiVocabularyPageComponent } from './ai-vocabulary/ai-vocabulary-page.component';
+import { VerbsPageComponent } from './verbs/verbs-page.component';
+import { OverviewPageComponent } from './overview/overview-page.component';
+import { HistoryPageComponent } from './history/history-page.component';
+import { SettingsComponent } from './settings/settings.component';
 
 export const routes: Routes = [
-  { path: '', redirectTo: 'practice', pathMatch: 'full' },
-  { path: 'practice', component: PracticeComponent },
-  { path: 'vocabulary', component: VocabularyListComponent },
+  { path: '', redirectTo: 'language-learning', pathMatch: 'full' },
+  { path: 'language-learning', component: PracticeComponent },
+  { path: 'vocabulary', component: VocabularyPageComponent },
+  { path: 'ai-vocabulary', component: AiVocabularyPageComponent },
+  { path: 'verbs', component: VerbsPageComponent },
+  { path: 'overview', component: OverviewPageComponent },
+  { path: 'history', component: HistoryPageComponent },
   { path: 'settings', component: SettingsComponent },
 ];

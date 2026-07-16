@@ -6,9 +6,16 @@ export class ExerciseService {
   constructor(private ipc: TauriIpcService) {}
 
   getAll(practiceLanguage?: string, nativeLanguage?: string) {
+    console.log('[ExerciseService] calling get_exercises', { practiceLanguage, nativeLanguage });
     return this.ipc.invoke<any[]>('get_exercises', {
       practiceLanguage: practiceLanguage || null,
       nativeLanguage: nativeLanguage || null,
+    }).then(data => {
+      console.log('[ExerciseService] get_exercises result:', data);
+      return data;
+    }).catch(err => {
+      console.error('[ExerciseService] get_exercises error:', err);
+      throw err;
     });
   }
 
