@@ -104,7 +104,7 @@ async fn handle_create_exercise(
     db: std::sync::Arc<AppDb>,
 ) -> Result<impl warp::Reply, warp::Rejection> {
     let id = AppDb::generate_id();
-    let now = chrono::Utc::now().to_rfc3339();
+    let now = AppDb::now_ms();
 
     let exercise = LanguageLearningExercise {
         id: id.clone(),

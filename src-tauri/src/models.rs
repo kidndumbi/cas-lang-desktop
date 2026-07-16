@@ -163,7 +163,7 @@ pub struct LanguageLearningExercise {
     pub word_count: i32,
     pub start_time: f64,
     pub end_time: f64,
-    pub created_at: String,
+    pub created_at: i64,
     #[serde(default)]
     pub practice_count: i32,
     #[serde(default)]
