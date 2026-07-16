@@ -14,12 +14,18 @@ fn greet(name: &str) -> String {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // Determine data directory for the database
-    let data_dir = dirs_next().unwrap_or_else(|| PathBuf::from("."));
+    // Store the database outside the project workspace to prevent Git/VS Code
+    // from holding file handles that interfere with sled's exclusive file lock.
+    let data_dir = std::env::var("APPDATA")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("."))
+        .join("cas-lang-desktop");
+    std::fs::create_dir_all(&data_dir).ok();
     let db_path = data_dir.join("cas_lang_data");
 
-    // Open the database
-    let db = AppDb::open(db_path).expect("Failed to open database");
+    println!("Database path: {:?}", db_path);
+    // Open the database with self-healing recovery (handles stale locks from crashes)
+    let db = AppDb::open(db_path).expect("Failed to open database after recovery attempts");
     let db = std::sync::Arc::new(db);
 
     // Start the warp HTTP server with all routes
@@ -40,6 +46,3 @@ pub fn run() {
         .expect("error while running tauri application");
 }
 
-fn dirs_next() -> Option<PathBuf> {
-    std::env::current_dir().ok()
-}

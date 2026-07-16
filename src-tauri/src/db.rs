@@ -7,8 +7,22 @@ pub struct AppDb {
 
 impl AppDb {
     pub fn open(path: PathBuf) -> Result<Self, sled::Error> {
-        let db = sled::open(path)?;
-        Ok(Self { db })
+        // Try normal open first
+        if let Ok(db) = sled::open(&path) {
+            return Ok(Self { db });
+        }
+        // Stale lock from crashed/killed process — retry with escalating backoff
+        eprintln!("DB open failed (stale lock). Waiting for OS to release...");
+        for attempt in 0..15 {
+            std::thread::sleep(std::time::Duration::from_millis(400 * (attempt + 1)));
+            if let Ok(db) = sled::open(&path) {
+                return Ok(Self { db });
+            }
+        }
+        // Last resort: delete the locked directory and start fresh
+        eprintln!("Still locked after retries. Deleting stale DB directory...");
+        let _ = std::fs::remove_dir_all(&path);
+        sled::open(path).map(|db| Self { db })
     }
 
     pub fn vocabulary(&self) -> Result<Tree, sled::Error> {
