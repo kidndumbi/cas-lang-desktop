@@ -48,11 +48,8 @@ pub fn update_vocabulary(state: State<DbState>, id: String, word: Value) -> Resu
     let existing = tree.get(id.as_bytes()).map_err(|e| e.to_string())?
         .ok_or("Not found")?;
     let mut w: Value = serde_json::from_slice(&existing).map_err(|e| e.to_string())?;
-    // Merge fields from word into w
     if let Some(obj) = word.as_object() {
-        for (k, v) in obj {
-            w[k] = v.clone();
-        }
+        for (k, v) in obj { w[k] = v.clone(); }
     }
     let json = serde_json::to_vec(&w).map_err(|e| e.to_string())?;
     tree.insert(id.as_bytes(), json).map_err(|e| e.to_string())?;
@@ -62,8 +59,7 @@ pub fn update_vocabulary(state: State<DbState>, id: String, word: Value) -> Resu
 #[tauri::command]
 pub fn update_vocabulary_stats(state: State<DbState>, id: String, correct: bool, exercise_type: Option<String>) -> Result<(), String> {
     let tree = state.0.vocabulary().map_err(|e| e.to_string())?;
-    let existing = tree.get(id.as_bytes()).map_err(|e| e.to_string())?
-        .ok_or("Not found")?;
+    let existing = tree.get(id.as_bytes()).map_err(|e| e.to_string())?.ok_or("Not found")?;
     let mut w: Value = serde_json::from_slice(&existing).map_err(|e| e.to_string())?;
     let pc = w["practiceCount"].as_i64().unwrap_or(0) as i32 + 1;
     let cc = w["correctCount"].as_i64().unwrap_or(0) as i32 + if correct { 1 } else { 0 };
@@ -73,24 +69,13 @@ pub fn update_vocabulary_stats(state: State<DbState>, id: String, correct: bool,
         if pc > 0 { (cc as f64 / pc as f64) * 100.0 } else { 0.0 }
     ).unwrap_or(0.into()));
     w["lastPracticed"] = Value::Number(AppDb::now_ms().into());
-
     let et = exercise_type.unwrap_or_else(|| "multiple-choice".to_string());
     match et.as_str() {
-        "multiple-choice" => {
-            w["mcTotal"] = Value::Number((w["mcTotal"].as_i64().unwrap_or(0) + 1).into());
-            if correct { w["mcCorrect"] = Value::Number((w["mcCorrect"].as_i64().unwrap_or(0) + 1).into()); }
-        }
-        "spell-word" => {
-            w["swTotal"] = Value::Number((w["swTotal"].as_i64().unwrap_or(0) + 1).into());
-            if correct { w["swCorrect"] = Value::Number((w["swCorrect"].as_i64().unwrap_or(0) + 1).into()); }
-        }
-        "type-word" => {
-            w["twTotal"] = Value::Number((w["twTotal"].as_i64().unwrap_or(0) + 1).into());
-            if correct { w["twCorrect"] = Value::Number((w["twCorrect"].as_i64().unwrap_or(0) + 1).into()); }
-        }
+        "multiple-choice" => { w["mcTotal"] = Value::Number((w["mcTotal"].as_i64().unwrap_or(0) + 1).into()); if correct { w["mcCorrect"] = Value::Number((w["mcCorrect"].as_i64().unwrap_or(0) + 1).into()); } }
+        "spell-word" => { w["swTotal"] = Value::Number((w["swTotal"].as_i64().unwrap_or(0) + 1).into()); if correct { w["swCorrect"] = Value::Number((w["swCorrect"].as_i64().unwrap_or(0) + 1).into()); } }
+        "type-word" => { w["twTotal"] = Value::Number((w["twTotal"].as_i64().unwrap_or(0) + 1).into()); if correct { w["twCorrect"] = Value::Number((w["twCorrect"].as_i64().unwrap_or(0) + 1).into()); } }
         _ => {}
     }
-
     let json = serde_json::to_vec(&w).map_err(|e| e.to_string())?;
     tree.insert(id.as_bytes(), json).map_err(|e| e.to_string())?;
     Ok(())
@@ -141,6 +126,36 @@ pub fn create_exercise(state: State<DbState>, exercise: Value) -> Result<Value, 
 }
 
 #[tauri::command]
+pub fn update_exercise(state: State<DbState>, id: String, exercise: Value) -> Result<Value, String> {
+    let tree = state.0.exercises().map_err(|e| e.to_string())?;
+    let existing = tree.get(id.as_bytes()).map_err(|e| e.to_string())?.ok_or("Not found")?;
+    let mut ex: Value = serde_json::from_slice(&existing).map_err(|e| e.to_string())?;
+    if let Some(obj) = exercise.as_object() {
+        for (k, v) in obj { ex[k] = v.clone(); }
+    }
+    let json = serde_json::to_vec(&ex).map_err(|e| e.to_string())?;
+    tree.insert(id.as_bytes(), json).map_err(|e| e.to_string())?;
+    Ok(ex)
+}
+
+#[tauri::command]
+pub fn update_exercise_stats(state: State<DbState>, id: String, correct: bool, snapshot: Option<Value>) -> Result<(), String> {
+    let tree = state.0.exercises().map_err(|e| e.to_string())?;
+    let existing = tree.get(id.as_bytes()).map_err(|e| e.to_string())?.ok_or("Not found")?;
+    let mut ex: Value = serde_json::from_slice(&existing).map_err(|e| e.to_string())?;
+    let pc = ex["practiceCount"].as_i64().unwrap_or(0) as i32 + 1;
+    let cc = ex["correctCount"].as_i64().unwrap_or(0) as i32 + if correct { 1 } else { 0 };
+    ex["practiceCount"] = Value::Number(pc.into());
+    ex["correctCount"] = Value::Number(cc.into());
+    ex["accuracyRate"] = Value::Number(serde_json::Number::from_f64(
+        if pc > 0 { (cc as f64 / pc as f64) * 100.0 } else { 0.0 }
+    ).unwrap_or(0.into()));
+    let json = serde_json::to_vec(&ex).map_err(|e| e.to_string())?;
+    tree.insert(id.as_bytes(), json).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
 pub fn delete_exercise(state: State<DbState>, id: String) -> Result<(), String> {
     let tree = state.0.exercises().map_err(|e| e.to_string())?;
     tree.remove(id.as_bytes()).map_err(|e| e.to_string())?;
@@ -152,10 +167,7 @@ pub fn delete_exercise(state: State<DbState>, id: String) -> Result<(), String> 
 #[tauri::command]
 pub fn get_tags(state: State<DbState>) -> Result<Vec<String>, String> {
     let tree = state.0.tags().map_err(|e| e.to_string())?;
-    let tags: Vec<String> = tree.iter().filter_map(|r| r.ok())
-        .filter_map(|(k, _)| String::from_utf8(k.to_vec()).ok())
-        .collect();
-    Ok(tags)
+    Ok(tree.iter().filter_map(|r| r.ok()).filter_map(|(k, _)| String::from_utf8(k.to_vec()).ok()).collect())
 }
 
 #[tauri::command]

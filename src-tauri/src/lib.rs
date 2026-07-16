@@ -59,6 +59,8 @@ pub fn run() {
             commands::delete_vocabulary,
             commands::get_exercises,
             commands::create_exercise,
+            commands::update_exercise,
+            commands::update_exercise_stats,
             commands::delete_exercise,
             commands::get_tags,
             commands::add_tag,

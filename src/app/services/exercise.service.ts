@@ -16,6 +16,14 @@ export class ExerciseService {
     return this.ipc.invoke<any>('create_exercise', { exercise });
   }
 
+  update(id: string, exercise: any) {
+    return this.ipc.invoke<any>('update_exercise', { id, exercise });
+  }
+
+  updateStats(id: string, correct: boolean, snapshot?: any) {
+    return this.ipc.invoke<void>('update_exercise_stats', { id, correct, snapshot: snapshot || null });
+  }
+
   delete(id: string) {
     return this.ipc.invoke<void>('delete_exercise', { id });
   }

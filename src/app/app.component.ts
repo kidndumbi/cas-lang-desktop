@@ -64,7 +64,7 @@ interface NavItem {
 })
 export class AppComponent {
   navItems: NavItem[] = [
-    { label: 'Exercises', icon: 'school', route: '/exercises' },
+    { label: 'Practice', icon: 'school', route: '/practice' },
     { label: 'Vocabulary', icon: 'spellcheck', route: '/vocabulary' },
     { label: 'Settings', icon: 'settings', route: '/settings' },
   ];
