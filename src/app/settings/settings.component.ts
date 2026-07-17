@@ -45,12 +45,14 @@ import { SettingsService, AppSettings } from '../services/settings.service';
         <mat-card-header><mat-card-title>Language Learning Exercise Types</mat-card-title></mat-card-header>
         <mat-card-content>
           <p style="font-size: 0.85em; color: #888; margin-bottom: 12px;">Check one or more types. When multiple are checked, a random type is picked each exercise.</p>
-          <div *ngFor="let pt of practiceTypeDefs" style="margin-bottom: 12px;">
-            <mat-checkbox [checked]="isPracticeTypeEnabled(pt.id)" (change)="togglePracticeType(pt.id, $event.checked)">
-              <strong>{{ pt.label }}</strong>
-              <br><small style="color: #888;">{{ pt.desc }}</small>
-            </mat-checkbox>
-          </div>
+          @for (pt of practiceTypeDefs; track pt.id) {
+            <div style="margin-bottom: 12px;">
+              <mat-checkbox [checked]="isPracticeTypeEnabled(pt.id)" (change)="togglePracticeType(pt.id, $event.checked)">
+                <strong>{{ pt.label }}</strong>
+                <br><small style="color: #888;">{{ pt.desc }}</small>
+              </mat-checkbox>
+            </div>
+          }
           <div style="margin-top: 8px;">
             <mat-checkbox [checked]="settings.spellTheBlanksEnabled" (change)="toggleSpellTheBlanks($event.checked)">
               <strong>Spell the Blanks</strong>
@@ -65,12 +67,14 @@ import { SettingsService, AppSettings } from '../services/settings.service';
         <mat-card-header><mat-card-title>Vocabulary Exercise Types</mat-card-title></mat-card-header>
         <mat-card-content>
           <p style="font-size: 0.85em; color: #888; margin-bottom: 12px;">Check one or more types. When multiple are checked, a random type is picked for each vocabulary word.</p>
-          <div *ngFor="let vt of vocabTypeDefs" style="margin-bottom: 12px;">
-            <mat-checkbox [checked]="isVocabTypeEnabled(vt.id)" (change)="toggleVocabType(vt.id, $event.checked)">
-              <strong>{{ vt.label }}</strong>
-              <br><small style="color: #888;">{{ vt.desc }}</small>
-            </mat-checkbox>
-          </div>
+          @for (vt of vocabTypeDefs; track vt.id) {
+            <div style="margin-bottom: 12px;">
+              <mat-checkbox [checked]="isVocabTypeEnabled(vt.id)" (change)="toggleVocabType(vt.id, $event.checked)">
+                <strong>{{ vt.label }}</strong>
+                <br><small style="color: #888;">{{ vt.desc }}</small>
+              </mat-checkbox>
+            </div>
+          }
         </mat-card-content>
       </mat-card>
     </div>

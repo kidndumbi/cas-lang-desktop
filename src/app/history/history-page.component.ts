@@ -14,33 +14,41 @@ import { TauriIpcService } from '../services/tau-ipc.service';
       <p style="color: #888;">Daily practice records across vocabulary and exercises.</p>
 
       <mat-accordion>
-        <mat-expansion-panel *ngFor="let day of history">
-          <mat-expansion-panel-header>
-            <mat-panel-title>
-              {{ day.date }}
-            </mat-panel-title>
-            <mat-panel-description>
-              {{ day.totalAttempts }} attempts · {{ day.correctCount }} correct
-              · {{ (day.totalAttempts > 0 ? (day.correctCount / day.totalAttempts * 100) : 0) | number:'1.0-1' }}%
-            </mat-panel-description>
-          </mat-expansion-panel-header>
-          <div *ngIf="day.vocabAttempts" style="font-size: 0.9em; color: #666;">
-            <strong>Vocabulary:</strong> {{ day.vocabAttempts }} attempts, {{ day.vocabCorrect }} correct
-            <span *ngIf="day.mc"> · MC: {{ day.mc }}</span>
-            <span *ngIf="day.sw"> · SW: {{ day.sw }}</span>
-            <span *ngIf="day.tw"> · TW: {{ day.tw }}</span>
-          </div>
-          <div *ngIf="day.exAttempts" style="font-size: 0.9em; color: #666; margin-top: 4px;">
-            <strong>Exercises:</strong> {{ day.exAttempts }} attempts, {{ day.exCorrect }} correct
-            <span *ngIf="day.arr"> · Arrange: {{ day.arr }}</span>
-            <span *ngIf="day.fim"> · Fill: {{ day.fim }}</span>
-            <span *ngIf="day.stb"> · Blanks: {{ day.stb }}</span>
-            <span *ngIf="day.conv"> · Conv: {{ day.conv }}</span>
-          </div>
-        </mat-expansion-panel>
+        @for (day of history; track day.date) {
+          <mat-expansion-panel>
+            <mat-expansion-panel-header>
+              <mat-panel-title>
+                {{ day.date }}
+              </mat-panel-title>
+              <mat-panel-description>
+                {{ day.totalAttempts }} attempts · {{ day.correctCount }} correct
+                · {{ (day.totalAttempts > 0 ? (day.correctCount / day.totalAttempts * 100) : 0) | number:'1.0-1' }}%
+              </mat-panel-description>
+            </mat-expansion-panel-header>
+            @if (day.vocabAttempts) {
+              <div style="font-size: 0.9em; color: #666;">
+                <strong>Vocabulary:</strong> {{ day.vocabAttempts }} attempts, {{ day.vocabCorrect }} correct
+                @if (day.mc) { <span> · MC: {{ day.mc }}</span> }
+                @if (day.sw) { <span> · SW: {{ day.sw }}</span> }
+                @if (day.tw) { <span> · TW: {{ day.tw }}</span> }
+              </div>
+            }
+            @if (day.exAttempts) {
+              <div style="font-size: 0.9em; color: #666; margin-top: 4px;">
+                <strong>Exercises:</strong> {{ day.exAttempts }} attempts, {{ day.exCorrect }} correct
+                @if (day.arr) { <span> · Arrange: {{ day.arr }}</span> }
+                @if (day.fim) { <span> · Fill: {{ day.fim }}</span> }
+                @if (day.stb) { <span> · Blanks: {{ day.stb }}</span> }
+                @if (day.conv) { <span> · Conv: {{ day.conv }}</span> }
+              </div>
+            }
+          </mat-expansion-panel>
+        }
       </mat-accordion>
 
-      <p *ngIf="history.length === 0" style="text-align: center; color: #aaa; margin-top: 40px;">No practice history yet.</p>
+      @if (history.length === 0) {
+        <p style="text-align: center; color: #aaa; margin-top: 40px;">No practice history yet.</p>
+      }
     </div>
   `,
 })

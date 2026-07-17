@@ -48,25 +48,27 @@ import { SettingsService } from '../services/settings.service';
         </mat-form-field>
       </div>
 
-      <mat-card *ngFor="let w of filteredWords" style="margin-bottom: 8px;">
-        <mat-card-content style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px;">
-          <div style="flex: 1;">
-            <div style="display: flex; align-items: center; gap: 8px;">
-              <strong style="font-size: 1.1em;">{{ w.word }}</strong>
-              <mat-icon style="font-size: 16px; color: #999;">arrow_forward</mat-icon>
-              <em style="font-size: 1.1em;">{{ w.translation }}</em>
+      @for (w of filteredWords; track w.id || w['id'] || $index) {
+        <mat-card style="margin-bottom: 8px;">
+          <mat-card-content style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px;">
+            <div style="flex: 1;">
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <strong style="font-size: 1.1em;">{{ w.word }}</strong>
+                <mat-icon style="font-size: 16px; color: #999;">arrow_forward</mat-icon>
+                <em style="font-size: 1.1em;">{{ w.translation }}</em>
+              </div>
+              <div style="font-size: 0.75em; color: #aaa; margin-top: 4px;">
+                {{ (w.practiceLanguage || w['practice_language']) | uppercase }}
+                · {{ w.difficulty || 'unrated' }}
+                · {{ w.practiceCount || w['practice_count'] || 0 }}× practiced
+                · {{ (w.accuracyRate || w['accuracy_rate'] || 0) | number:'1.0-0' }}%
+                @if (w.tags?.length) { <span> · {{ w.tags.join(', ') }}</span> }
+              </div>
             </div>
-            <div style="font-size: 0.75em; color: #aaa; margin-top: 4px;">
-              {{ (w.practiceLanguage || w['practice_language']) | uppercase }}
-              · {{ w.difficulty || 'unrated' }}
-              · {{ w.practiceCount || w['practice_count'] || 0 }}× practiced
-              · {{ (w.accuracyRate || w['accuracy_rate'] || 0) | number:'1.0-0' }}%
-              <span *ngIf="w.tags?.length"> · {{ w.tags.join(', ') }}</span>
-            </div>
-          </div>
-          <button mat-icon-button color="warn" (click)="deleteWord(w)"><mat-icon>delete</mat-icon></button>
-        </mat-card-content>
-      </mat-card>
+            <button mat-icon-button color="warn" (click)="deleteWord(w)"><mat-icon>delete</mat-icon></button>
+          </mat-card-content>
+        </mat-card>
+      }
     </div>
   `,
 })

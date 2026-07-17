@@ -23,12 +23,14 @@ interface NavItem { label: string; icon: string; route: string; }
     <mat-sidenav-container style="height: calc(100vh - 64px);">
       <mat-sidenav mode="side" opened style="width: 200px; background: #fafafa; border-right: 1px solid #e0e0e0;">
         <mat-nav-list style="padding-top: 8px;">
-          <a mat-list-item *ngFor="let item of navItems" [routerLink]="item.route"
-             routerLinkActive="active-link" [routerLinkActiveOptions]="{ exact: false }"
-             style="display: flex; align-items: center; gap: 12px; border-radius: 0; margin: 2px 8px;">
-            <mat-icon>{{ item.icon }}</mat-icon>
-            <span>{{ item.label }}</span>
-          </a>
+          @for (item of navItems; track item.route) {
+            <a mat-list-item [routerLink]="item.route"
+               routerLinkActive="active-link" [routerLinkActiveOptions]="{ exact: false }"
+               style="display: flex; align-items: center; gap: 12px; border-radius: 0; margin: 2px 8px;">
+              <mat-icon>{{ item.icon }}</mat-icon>
+              <span>{{ item.label }}</span>
+            </a>
+          }
         </mat-nav-list>
       </mat-sidenav>
 

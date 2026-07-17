@@ -11,9 +11,9 @@ import { ExerciseService } from '../../services/exercise.service';
 import { TagService } from '../../services/tag.service';
 import { SettingsService } from '../../services/settings.service';
 import { ExerciseStatsHeaderComponent } from './exercise-stats-header.component';
-import { TagManagementModalComponent } from './tag-management-modal.component';
-import { ExerciseListModalComponent } from './exercise-list-modal.component';
-import { CreateExerciseModalComponent } from './create-exercise-modal.component';
+import { TagManagementModalComponent, TagManagementModalData } from './tag-management-modal.component';
+import { ExerciseListModalComponent, ExerciseListModalData } from './exercise-list-modal.component';
+import { CreateExerciseModalComponent, CreateExerciseModalData } from './create-exercise-modal.component';
 
 type PracticeMode = 'arrange-words' | 'fill-in-missing' | 'spell-the-blanks';
 
@@ -23,158 +23,159 @@ type PracticeMode = 'arrange-words' | 'fill-in-missing' | 'spell-the-blanks';
   imports: [
     CommonModule, FormsModule,
     MatCardModule, MatButtonModule, MatIconModule, MatChipsModule, MatSnackBarModule, MatDialogModule,
-    ExerciseStatsHeaderComponent, TagManagementModalComponent, ExerciseListModalComponent, CreateExerciseModalComponent,
+    ExerciseStatsHeaderComponent,
   ],
   template: `
     <div style="padding: 24px; max-width: 900px; margin: 0 auto;">
       <!-- Stats Header -->
-      <app-exercise-stats-header
-        *ngIf="exercises.length > 0"
-        [totalExercises]="exercises.length"
-        [favoriteCount]="favoriteCount()"
-        [sessionCorrect]="sessionCorrect"
-        [sessionAttempts]="sessionAttempts"
-        [loading]="loading()"
-        (openExerciseList)="showExerciseList = true"
-        (openTagManagement)="showTagManagement = true"
-        (openCreateExercise)="showCreateExercise = true">
-      </app-exercise-stats-header>
+      @if (exercises.length > 0) {
+        <app-exercise-stats-header
+          [totalExercises]="exercises.length"
+          [favoriteCount]="favoriteCount()"
+          [sessionCorrect]="sessionCorrect"
+          [sessionAttempts]="sessionAttempts"
+          [loading]="loading()"
+          (openExerciseList)="openExerciseListDialog()"
+          (openTagManagement)="openTagManagementDialog()"
+          (openCreateExercise)="openCreateExerciseDialog()">
+        </app-exercise-stats-header>
+      }
 
       <!-- Empty state -->
-      <div *ngIf="!exercise" style="text-align: center; padding: 60px 20px;">
-        <mat-icon style="font-size: 64px; height: 64px; width: 64px; color: #3f51b5;">school</mat-icon>
-        <h2 *ngIf="exercises.length === 0">No exercises available</h2>
-        <h2 *ngIf="exercises.length > 0">Practice Complete!</h2>
-        <p style="color: #888;">
-          {{ exercises.length === 0 ? 'Use the Cassava Theater migration tool to import your data.' : 'Great job! You\'ve practiced all available exercises.' }}
-        </p>
-        <button *ngIf="exercises.length > 0" mat-raised-button color="primary" (click)="restartSession()">
-          <mat-icon>replay</mat-icon> Practice Again
-        </button>
-      </div>
+      @if (!exercise) {
+        <div style="text-align: center; padding: 60px 20px;">
+          <mat-icon style="font-size: 64px; height: 64px; width: 64px; color: #3f51b5;">school</mat-icon>
+          @if (exercises.length === 0) {
+            <h2>No exercises available</h2>
+          }
+          @if (exercises.length > 0) {
+            <h2>Practice Complete!</h2>
+          }
+          <p style="color: #888;">
+            {{ exercises.length === 0 ? 'Use the Cassava Theater migration tool to import your data.' : 'Great job! You\'ve practiced all available exercises.' }}
+          </p>
+          @if (exercises.length > 0) {
+            <button mat-raised-button color="primary" (click)="restartSession()">
+              <mat-icon>replay</mat-icon> Practice Again
+            </button>
+          }
+        </div>
+      }
 
       <!-- Exercise Card -->
-      <mat-card *ngIf="exercise" style="margin-bottom: 16px;">
-        <mat-card-content style="padding: 24px;">
-          <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px;">
-            <div>
-              <mat-chip-set role="list">
-                <mat-chip-row role="listitem">{{ settings.practiceLanguage | uppercase }} → {{ settings.nativeLanguage | uppercase }}</mat-chip-row>
-              </mat-chip-set>
-              <div style="margin-top: 8px; font-size: 0.85em; color: #666;">
-                Mode: {{ getModeName() }} · {{ (exercise.wordCount || exercise['word_count'] || 0) }} words
+      @if (exercise) {
+        <mat-card style="margin-bottom: 16px;">
+          <mat-card-content style="padding: 24px;">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px;">
+              <div>
+                <mat-chip-set role="list">
+                  <mat-chip-row role="listitem">{{ settings.practiceLanguage | uppercase }} → {{ settings.nativeLanguage | uppercase }}</mat-chip-row>
+                </mat-chip-set>
+                <div style="margin-top: 8px; font-size: 0.85em; color: #666;">
+                  Mode: {{ getModeName() }} · {{ (exercise.wordCount || exercise['word_count'] || 0) }} words
+                </div>
               </div>
+              @if (availablePracticeTypes.length > 1) {
+                <button mat-icon-button color="primary" (click)="toggleMode()" title="Switch mode">
+                  <mat-icon>swap_horiz</mat-icon>
+                </button>
+              }
             </div>
-            <button *ngIf="availablePracticeTypes.length > 1" mat-icon-button color="primary" (click)="toggleMode()" title="Switch mode">
-              <mat-icon>swap_horiz</mat-icon>
-            </button>
-          </div>
 
-          <div style="background: #e8eaf6; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
-            <div style="font-size: 0.8em; color: #5c6bc0; margin-bottom: 4px;">Reference ({{ settings.nativeLanguage | uppercase }})</div>
-            <div style="font-size: 1.1em; font-weight: 500;">{{ exercise.nativeLanguageText || exercise['native_language_text'] }}</div>
-          </div>
-
-          <div *ngIf="currentMode === 'arrange-words'">
-            <div style="font-size: 0.8em; color: #888; margin-bottom: 8px;">Arrange the words in correct order:</div>
-            <div *ngIf="selectedWords.length > 0" style="min-height: 48px; border: 2px dashed #3f51b5; border-radius: 8px; padding: 8px; margin-bottom: 12px; display: flex; flex-wrap: wrap; gap: 6px; background: #f3f5ff;">
-              <mat-chip-set role="list"><mat-chip-row *ngFor="let w of selectedWords; let i = index" (click)="removeWord(i)" color="primary" highlighted role="listitem" style="cursor: pointer;">{{ w }}</mat-chip-row></mat-chip-set>
+            <div style="background: #e8eaf6; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
+              <div style="font-size: 0.8em; color: #5c6bc0; margin-bottom: 4px;">Reference ({{ settings.nativeLanguage | uppercase }})</div>
+              <div style="font-size: 1.1em; font-weight: 500;">{{ exercise.nativeLanguageText || exercise['native_language_text'] }}</div>
             </div>
-            <div *ngIf="selectedWords.length === 0" style="min-height: 48px; border: 2px dashed #ccc; border-radius: 8px; padding: 8px; margin-bottom: 12px; display: flex; align-items: center; justify-content: center; color: #aaa;">Tap words below to arrange them here</div>
-            <mat-chip-set role="list" style="display: flex; flex-wrap: wrap; gap: 6px;">
-              <mat-chip-row *ngFor="let w of availableWords; let i = index" (click)="selectWord(w, i)" color="accent" role="listitem" style="cursor: pointer;">{{ w }}</mat-chip-row>
-            </mat-chip-set>
-          </div>
 
-          <div *ngIf="currentMode === 'fill-in-missing'">
-            <div style="font-size: 0.8em; color: #888; margin-bottom: 8px;">Fill in the missing words:</div>
-            <div style="font-size: 1.15em; line-height: 2.2;">
-              <ng-container *ngFor="let part of fillTemplate; let i = index">
-                <input *ngIf="part.isBlank" type="text" [value]="blankAnswers[i] || ''" (input)="onBlankChange($event, i)" placeholder="?"
-                  style="width: 80px; padding: 4px 8px; border: 2px solid #3f51b5; border-radius: 4px; text-align: center; font-size: 1em; margin: 0 4px;" autocomplete="off" spellcheck="false">
-                <span *ngIf="!part.isBlank">{{ part.text }}</span>
-              </ng-container>
-            </div>
-          </div>
+            @if (currentMode === 'arrange-words') {
+              <div>
+                <div style="font-size: 0.8em; color: #888; margin-bottom: 8px;">Arrange the words in correct order:</div>
+                @if (selectedWords.length > 0) {
+                  <div style="min-height: 48px; border: 2px dashed #3f51b5; border-radius: 8px; padding: 8px; margin-bottom: 12px; display: flex; flex-wrap: wrap; gap: 6px; background: #f3f5ff;">
+                    <mat-chip-set role="list">
+                      @for (w of selectedWords; track $index; let i = $index) {
+                        <mat-chip-row (click)="removeWord(i)" color="primary" highlighted role="listitem" style="cursor: pointer;">{{ w }}</mat-chip-row>
+                      }
+                    </mat-chip-set>
+                  </div>
+                }
+                @if (selectedWords.length === 0) {
+                  <div style="min-height: 48px; border: 2px dashed #ccc; border-radius: 8px; padding: 8px; margin-bottom: 12px; display: flex; align-items: center; justify-content: center; color: #aaa;">Tap words below to arrange them here</div>
+                }
+                <mat-chip-set role="list" style="display: flex; flex-wrap: wrap; gap: 6px;">
+                  @for (w of availableWords; track $index; let i = $index) {
+                    <mat-chip-row (click)="selectWord(w, i)" color="accent" role="listitem" style="cursor: pointer;">{{ w }}</mat-chip-row>
+                  }
+                </mat-chip-set>
+              </div>
+            }
 
-          <div *ngIf="currentMode === 'spell-the-blanks'">
-            <div style="font-size: 0.8em; color: #888; margin-bottom: 8px;">Type the missing words from memory:</div>
-            <div style="font-size: 1.15em; line-height: 2.2;">
-              <ng-container *ngFor="let part of spellTemplate; let i = index">
-                <input *ngIf="part.isBlank" type="text" [value]="spellAnswers[i] || ''" (input)="onSpellChange($event, i)" placeholder="?"
-                  style="width: 80px; padding: 4px 8px; border: 2px solid #e91e63; border-radius: 4px; text-align: center; font-size: 1em; margin: 0 4px;" autocomplete="off" spellcheck="false">
-                <span *ngIf="!part.isBlank">{{ part.text }}</span>
-              </ng-container>
-            </div>
-          </div>
+            @if (currentMode === 'fill-in-missing') {
+              <div>
+                <div style="font-size: 0.8em; color: #888; margin-bottom: 8px;">Fill in the missing words:</div>
+                <div style="font-size: 1.15em; line-height: 2.2;">
+                  @for (part of fillTemplate; track $index; let i = $index) {
+                    @if (part.isBlank) {
+                      <input type="text" [value]="blankAnswers[i] || ''" (input)="onBlankChange($event, i)" placeholder="?"
+                        style="width: 80px; padding: 4px 8px; border: 2px solid #3f51b5; border-radius: 4px; text-align: center; font-size: 1em; margin: 0 4px;" autocomplete="off" spellcheck="false">
+                    }
+                    @if (!part.isBlank) {
+                      <span>{{ part.text }}</span>
+                    }
+                  }
+                </div>
+              </div>
+            }
 
-          <div *ngIf="showResult" style="margin-top: 16px; border-radius: 8px; padding: 16px;"
-            [style.background]="isCorrect ? '#e8f5e9' : '#fbe9e7'">
-            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
-              <mat-icon [style.color]="isCorrect ? '#2e7d32' : '#c62828'">{{ isCorrect ? 'check_circle' : 'cancel' }}</mat-icon>
-              <strong [style.color]="isCorrect ? '#2e7d32' : '#c62828'">{{ isCorrect ? 'Correct!' : 'Incorrect' }}</strong>
-            </div>
-            <div *ngIf="!isCorrect" style="font-size: 0.9em; color: #666;">
-              Correct answer: <strong>{{ exercise.practiceLanguageText || exercise['practice_language_text'] }}</strong>
-            </div>
-          </div>
+            @if (currentMode === 'spell-the-blanks') {
+              <div>
+                <div style="font-size: 0.8em; color: #888; margin-bottom: 8px;">Type the missing words from memory:</div>
+                <div style="font-size: 1.15em; line-height: 2.2;">
+                  @for (part of spellTemplate; track $index; let i = $index) {
+                    @if (part.isBlank) {
+                      <input type="text" [value]="spellAnswers[i] || ''" (input)="onSpellChange($event, i)" placeholder="?"
+                        style="width: 80px; padding: 4px 8px; border: 2px solid #e91e63; border-radius: 4px; text-align: center; font-size: 1em; margin: 0 4px;" autocomplete="off" spellcheck="false">
+                    }
+                    @if (!part.isBlank) {
+                      <span>{{ part.text }}</span>
+                    }
+                  }
+                </div>
+              </div>
+            }
 
-          <div style="margin-top: 16px; display: flex; gap: 8px;" *ngIf="!showResult">
-            <button mat-raised-button color="primary" (click)="submitAnswer()" [disabled]="!canSubmit()">
-              <mat-icon>check</mat-icon> Check Answer
-            </button>
-            <button mat-button (click)="resetExercise()"><mat-icon>refresh</mat-icon> Reset</button>
-          </div>
-          <div style="margin-top: 16px; display: flex; gap: 8px;" *ngIf="showResult">
-            <button mat-raised-button color="primary" (click)="nextExercise()"><mat-icon>chevron_right</mat-icon> Next Exercise</button>
-            <button mat-button (click)="resetExercise()"><mat-icon>replay</mat-icon> Retry</button>
-          </div>
-        </mat-card-content>
-      </mat-card>
+            @if (showResult) {
+              <div style="margin-top: 16px; border-radius: 8px; padding: 16px;"
+                [style.background]="isCorrect ? '#e8f5e9' : '#fbe9e7'">
+                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                  <mat-icon [style.color]="isCorrect ? '#2e7d32' : '#c62828'">{{ isCorrect ? 'check_circle' : 'cancel' }}</mat-icon>
+                  <strong [style.color]="isCorrect ? '#2e7d32' : '#c62828'">{{ isCorrect ? 'Correct!' : 'Incorrect' }}</strong>
+                </div>
+                @if (!isCorrect) {
+                  <div style="font-size: 0.9em; color: #666;">
+                    Correct answer: <strong>{{ exercise.practiceLanguageText || exercise['practice_language_text'] }}</strong>
+                  </div>
+                }
+              </div>
+            }
 
-      <!-- Tag Management Modal -->
-      <app-tag-management-modal
-        *ngIf="showTagManagement"
-        [allTags]="allTags()"
-        [isAddingTag]="isAddingTag()"
-        [isDeletingTag]="isDeletingTag()"
-        [tagError]="tagError()"
-        (addTagRequested)="addTag($event)"
-        (deleteTagRequested)="deleteTag($event)"
-        (closed)="showTagManagement = false">
-      </app-tag-management-modal>
-
-      <!-- Exercise List Modal -->
-      <app-exercise-list-modal
-        *ngIf="showExerciseList"
-        [totalExercises]="exercises.length"
-        [paginatedExercises]="paginatedExercises()"
-        [totalPages]="totalPages()"
-        [currentPage]="currentPage()"
-        [uniqueTags]="uniqueExerciseTags()"
-        [selectedTags]="selectedTagFilters()"
-        (selectExercise)="selectExercise($event)"
-        (editExercise)="editExercise($event)"
-        (deleteExercise)="deleteExercise($event)"
-        (updateFilter)="updateFilter($event.key, $event.value)"
-        (clearFilters)="clearFilters()"
-        (toggleTagFilter)="toggleTagFilter($event)"
-        (goToNextPage)="goToNextPage()"
-        (goToPreviousPage)="goToPreviousPage()"
-        (goToFirstPage)="goToFirstPage()"
-        (goToLastPage)="goToLastPage()"
-        (closed)="showExerciseList = false">
-      </app-exercise-list-modal>
-
-      <!-- Create Exercise Modal -->
-      <app-create-exercise-modal
-        *ngIf="showCreateExercise"
-        [allTags]="allTags()"
-        [isSaving]="isSavingExercise()"
-        [error]="createError()"
-        (saved)="handleCreateExercise($event)"
-        (closed)="showCreateExercise = false">
-      </app-create-exercise-modal>
+            @if (!showResult) {
+              <div style="margin-top: 16px; display: flex; gap: 8px;">
+                <button mat-raised-button color="primary" (click)="submitAnswer()" [disabled]="!canSubmit()">
+                  <mat-icon>check</mat-icon> Check Answer
+                </button>
+                <button mat-button (click)="resetExercise()"><mat-icon>refresh</mat-icon> Reset</button>
+              </div>
+            }
+            @if (showResult) {
+              <div style="margin-top: 16px; display: flex; gap: 8px;">
+                <button mat-raised-button color="primary" (click)="nextExercise()"><mat-icon>chevron_right</mat-icon> Next Exercise</button>
+                <button mat-button (click)="resetExercise()"><mat-icon>replay</mat-icon> Retry</button>
+              </div>
+            }
+          </mat-card-content>
+        </mat-card>
+      }
     </div>
   `,
 })
@@ -197,11 +198,6 @@ export class LanguageLearningPageComponent implements OnInit {
   sessionCorrect = 0;
   sessionAttempts = 0;
   private usedIndices: number[] = [];
-
-  // Modal visibility
-  showTagManagement = false;
-  showExerciseList = false;
-  showCreateExercise = false;
 
   // Signals
   loading = signal(false);
@@ -227,6 +223,7 @@ export class LanguageLearningPageComponent implements OnInit {
     private tagService: TagService,
     private ss: SettingsService,
     private snackBar: MatSnackBar,
+    private dialog: MatDialog,
   ) {}
 
   async ngOnInit() {
@@ -343,6 +340,59 @@ export class LanguageLearningPageComponent implements OnInit {
     return 'Spell the Blanks';
   }
 
+  // ─── Dialog Openers ──────────────────────────────────────────
+
+  openTagManagementDialog() {
+    const dialogRef = this.dialog.open(TagManagementModalComponent, {
+      width: '500px',
+      data: {
+        allTags: this.allTags(),
+        isAddingTag: this.isAddingTag(),
+        isDeletingTag: this.isDeletingTag(),
+        tagError: this.tagError(),
+        onAddTag: (tag: string) => this.addTag(tag),
+        onDeleteTag: (tag: string) => this.deleteTag(tag),
+      } satisfies TagManagementModalData,
+    });
+  }
+
+  openExerciseListDialog() {
+    const dialogRef = this.dialog.open(ExerciseListModalComponent, {
+      width: '900px',
+      maxHeight: '80vh',
+      data: {
+        totalExercises: this.exercises.length,
+        paginatedExercises: this.paginatedExercises(),
+        totalPages: this.totalPages(),
+        currentPage: this.currentPage(),
+        uniqueTags: this.uniqueExerciseTags(),
+        selectedTags: this.selectedTagFilters(),
+        onSelectExercise: (ex: any) => this.selectExercise(ex),
+        onEditExercise: (ex: any) => this.editExercise(ex),
+        onDeleteExercise: (ex: any) => this.deleteExercise(ex),
+        onUpdateFilter: (key: string, value: string) => this.updateFilter(key, value),
+        onClearFilters: () => this.clearFilters(),
+        onToggleTagFilter: (tag: string) => this.toggleTagFilter(tag),
+        onGoToNextPage: () => this.goToNextPage(),
+        onGoToPreviousPage: () => this.goToPreviousPage(),
+        onGoToFirstPage: () => this.goToFirstPage(),
+        onGoToLastPage: () => this.goToLastPage(),
+      } satisfies ExerciseListModalData,
+    });
+  }
+
+  openCreateExerciseDialog() {
+    const dialogRef = this.dialog.open(CreateExerciseModalComponent, {
+      width: '600px',
+      data: {
+        allTags: this.allTags(),
+        isSaving: this.isSavingExercise(),
+        error: this.createError(),
+        onSaved: (data: any) => this.handleCreateExercise(data),
+      } satisfies CreateExerciseModalData,
+    });
+  }
+
   // ─── Tag Management ──────────────────────────────────────────
 
   async addTag(tag: string) {
@@ -374,7 +424,7 @@ export class LanguageLearningPageComponent implements OnInit {
     this.exercise = ex;
     this.usedIndices = [this.exercises.indexOf(ex)];
     this.setupExercise();
-    this.showExerciseList = false;
+    this.dialog.closeAll();
   }
 
   async deleteExercise(ex: any) {
@@ -387,7 +437,6 @@ export class LanguageLearningPageComponent implements OnInit {
   }
 
   async editExercise(ex: any) {
-    // For now, just refresh; full edit dialog can be added later
     this.snackBar.open('Edit exercise coming soon', 'OK', { duration: 2000 });
   }
 
@@ -448,7 +497,7 @@ export class LanguageLearningPageComponent implements OnInit {
     try {
       await this.exerciseService.create(data);
       this.snackBar.open('Exercise created', 'OK', { duration: 2000 });
-      this.showCreateExercise = false;
+      this.dialog.closeAll();
       this.loadExercises();
     } catch {
       this.createError.set('Failed to create exercise');

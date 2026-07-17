@@ -38,17 +38,21 @@ import { SettingsService } from '../services/settings.service';
 
       <!-- Last 7 days -->
       <h3>Last 7 Days</h3>
-      <div style="display: flex; gap: 8px; margin-bottom: 16px;" *ngIf="weekDays.length > 0">
-        <mat-card *ngFor="let d of weekDays" style="flex: 1; text-align: center;">
-          <mat-card-content style="padding: 12px;">
-            <div style="font-size: 0.75em; color: #888;">{{ d.label }}</div>
-            <div [style.color]="d.hasPracticed ? '#4caf50' : '#ccc'" style="font-size: 1.5em; margin-top: 4px;">
-              {{ d.hasPracticed ? '●' : '○' }}
-            </div>
-            <div style="font-size: 0.7em; color: #888;">{{ d.attempts }} attempts</div>
-          </mat-card-content>
-        </mat-card>
-      </div>
+      @if (weekDays.length > 0) {
+        <div style="display: flex; gap: 8px; margin-bottom: 16px;">
+          @for (d of weekDays; track d.label) {
+            <mat-card style="flex: 1; text-align: center;">
+              <mat-card-content style="padding: 12px;">
+                <div style="font-size: 0.75em; color: #888;">{{ d.label }}</div>
+                <div [style.color]="d.hasPracticed ? '#4caf50' : '#ccc'" style="font-size: 1.5em; margin-top: 4px;">
+                  {{ d.hasPracticed ? '●' : '○' }}
+                </div>
+                <div style="font-size: 0.7em; color: #888;">{{ d.attempts }} attempts</div>
+              </mat-card-content>
+            </mat-card>
+          }
+        </div>
+      }
     </div>
   `,
 })
