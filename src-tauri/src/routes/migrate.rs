@@ -1,166 +1,172 @@
-use crate::db::AppDb;
 use warp::Filter;
+use crate::db::AppDb;
 
-pub fn migrate_routes(
-    db: std::sync::Arc<AppDb>,
-) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
+pub fn migrate_routes(db: std::sync::Arc<AppDb>) -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
     let db_filter = warp::any().map(move || db.clone());
-    let migrate = warp::path!("api" / "migrate")
+
+    warp::path!("api" / "migrate")
         .and(warp::post())
         .and(warp::body::json::<serde_json::Value>())
         .and(db_filter)
-        .and_then(handle_migrate);
-    migrate
+        .and_then(handle_migrate)
 }
 
 async fn handle_migrate(
-    data: serde_json::Value,
+    body: serde_json::Value,
     db: std::sync::Arc<AppDb>,
 ) -> Result<impl warp::Reply, warp::Rejection> {
-    let mut vocab_count = 0usize;
-    let mut ex_count = 0usize;
-    let mut tag_count = 0usize;
-    let mut tense_count = 0usize;
-    let mut conv_count = 0usize;
+    let mut counts = serde_json::Map::new();
 
-    // Migrate vocabulary words — normalize missing IDs
-    if let Some(vocab) = data["vocabulary"].as_array() {
+    if let Some(arr) = body["vocabulary"].as_array() {
         if let Ok(tree) = db.vocabulary() {
-            for word_val in vocab {
-                let mut word = word_val.clone();
-                // Generate ID if missing
-                if word["id"].is_null() || word["id"].as_str().map(|s| s.is_empty()).unwrap_or(true) {
-                    word["id"] = serde_json::Value::String(AppDb::generate_id());
+            let mut count = 0;
+            for item in arr {
+                let id = item["id"].as_str().unwrap_or("").to_string();
+                if id.is_empty() {
+                    // Skip items without proper ID - they need to be created differently
+                    continue;
                 }
-                if let Some(id) = word["id"].as_str() {
-                    if let Ok(json) = serde_json::to_vec(&word) {
-                        let _ = tree.insert(id.as_bytes(), json);
-                        vocab_count += 1;
+                let key = format!("vocabulary_{}", id);
+                if let Ok(json) = serde_json::to_vec(item) {
+                    if let Err(e) = tree.insert(key.as_bytes(), json) {
+                        eprintln!("Failed to insert vocabulary item: {}", e);
+                    } else {
+                        count += 1;
                     }
                 }
             }
+            counts.insert("vocabularyCount".into(), serde_json::Value::Number(count.into()));
         }
     }
 
-    // Migrate vocabulary logs
-    if let Some(logs) = data["vocabularyLogs"].as_object() {
-        if let Ok(tree) = db.vocabulary_logs() {
-            for (key, val) in logs {
-                let logs_key = format!("vocabulary_logs_{}", key);
-                if let Ok(json) = serde_json::to_vec(val) {
-                    let _ = tree.insert(logs_key.as_bytes(), json);
-                }
-            }
-        }
-    }
-
-    // Migrate vocabulary session logs
-    if let Some(sessions) = data["vocabularySessionLogs"].as_array() {
+    if let Some(arr) = body["vocabularySessionLogs"].as_array() {
         if let Ok(tree) = db.vocabulary_session_logs() {
-            for session in sessions {
-                if let Some(date) = session["date"].as_str() {
-                    if let Ok(json) = serde_json::to_vec(session) {
-                        let _ = tree.insert(date.as_bytes(), json);
+            let mut count = 0;
+            for item in arr {
+                let date = item["date"].as_str().unwrap_or("");
+                if date.is_empty() {
+                    continue;
+                }
+                let key = format!("vsession_{}", date);
+                if let Ok(json) = serde_json::to_vec(item) {
+                    if let Err(e) = tree.insert(key.as_bytes(), json) {
+                        eprintln!("Failed to insert vocabulary session log: {}", e);
+                    } else {
+                        count += 1;
                     }
                 }
             }
+            counts.insert("vocabularySessionCount".into(), serde_json::Value::Number(count.into()));
         }
     }
 
-    // Migrate exercises — normalize missing IDs
-    if let Some(exercises) = data["exercises"].as_array() {
+    if let Some(arr) = body["exercises"].as_array() {
         if let Ok(tree) = db.exercises() {
-            for ex_val in exercises {
-                let mut ex = ex_val.clone();
-                if ex["id"].is_null() || ex["id"].as_str().map(|s| s.is_empty()).unwrap_or(true) {
-                    ex["id"] = serde_json::Value::String(AppDb::generate_id());
+            let mut count = 0;
+            for item in arr {
+                let id = item["id"].as_str().unwrap_or("");
+                if id.is_empty() {
+                    continue;
                 }
-                if let Some(id) = ex["id"].as_str() {
-                    if let Ok(json) = serde_json::to_vec(&ex) {
-                        let _ = tree.insert(id.as_bytes(), json);
-                        ex_count += 1;
+                let key = format!("exercise_{}", id);
+                if let Ok(json) = serde_json::to_vec(item) {
+                    if let Err(e) = tree.insert(key.as_bytes(), json) {
+                        eprintln!("Failed to insert exercise: {}", e);
+                    } else {
+                        count += 1;
                     }
                 }
             }
+            counts.insert("exerciseCount".into(), serde_json::Value::Number(count.into()));
         }
     }
 
-    // Migrate exercise logs
-    if let Some(logs) = data["exerciseLogs"].as_object() {
-        if let Ok(tree) = db.exercise_logs() {
-            for (key, val) in logs {
-                let logs_key = format!("exercise_logs_{}", key);
-                if let Ok(json) = serde_json::to_vec(val) {
-                    let _ = tree.insert(logs_key.as_bytes(), json);
-                }
-            }
-        }
-    }
-
-    // Migrate exercise session logs
-    if let Some(sessions) = data["exerciseSessionLogs"].as_array() {
+    if let Some(arr) = body["exerciseSessionLogs"].as_array() {
         if let Ok(tree) = db.exercise_session_logs() {
-            for session in sessions {
-                if let Some(date) = session["date"].as_str() {
-                    if let Ok(json) = serde_json::to_vec(session) {
-                        let _ = tree.insert(date.as_bytes(), json);
+            let mut count = 0;
+            for item in arr {
+                let date = item["date"].as_str().unwrap_or("");
+                if date.is_empty() {
+                    continue;
+                }
+                let key = format!("esession_{}", date);
+                if let Ok(json) = serde_json::to_vec(item) {
+                    if let Err(e) = tree.insert(key.as_bytes(), json) {
+                        eprintln!("Failed to insert exercise session log: {}", e);
+                    } else {
+                        count += 1;
                     }
                 }
             }
+            counts.insert("exerciseSessionCount".into(), serde_json::Value::Number(count.into()));
         }
     }
 
-    // Migrate tags
-    if let Some(tags) = data["tags"].as_array() {
+    if let Some(arr) = body["tags"].as_array() {
         if let Ok(tree) = db.tags() {
-            for tag in tags {
-                if let Some(t) = tag.as_str() {
-                    let _ = tree.insert(t.as_bytes(), b"1");
-                    tag_count += 1;
+            let mut count = 0;
+            for item in arr {
+                if let Some(tag) = item.as_str() {
+                    if let Err(e) = tree.insert(tag.as_bytes(), b"1") {
+                        eprintln!("Failed to insert tag: {}", e);
+                    } else {
+                        count += 1;
+                    }
                 }
             }
+            counts.insert("tagsCount".into(), serde_json::Value::Number(count.into()));
         }
     }
 
-    // Migrate tenses (array of [key, value] arrays)
-    if let Some(tenses) = data["tenses"].as_array() {
+    if let Some(arr) = body["tenses"].as_array() {
         if let Ok(tree) = db.tenses() {
-            for pair in tenses {
-                if let Some(arr) = pair.as_array() {
-                    if let (Some(key), Some(val)) = (arr.first(), arr.get(1)) {
-                        if let Some(k) = key.as_str() {
-                            if let Ok(json) = serde_json::to_vec(val) {
-                                let _ = tree.insert(k.as_bytes(), json);
-                                tense_count += 1;
-                            }
-                        }
+            let mut count = 0;
+            for item in arr {
+                let id = item["id"].as_str().unwrap_or("");
+                if id.is_empty() {
+                    continue;
+                }
+                let key = format!("tense_{}", id);
+                if let Ok(json) = serde_json::to_vec(item) {
+                    if let Err(e) = tree.insert(key.as_bytes(), json) {
+                        eprintln!("Failed to insert tense: {}", e);
+                    } else {
+                        count += 1;
                     }
                 }
             }
+            counts.insert("tensesCount".into(), serde_json::Value::Number(count.into()));
         }
     }
 
-    // Migrate exercise AI conversations
-    if let Some(conversations) = data["exerciseAiConversations"].as_array() {
+    if let Some(arr) = body["exerciseAiConversations"].as_array() {
         if let Ok(tree) = db.exercise_ai_conversations() {
-            for conv in conversations {
-                if let Some(ex_id) = conv["exerciseId"].as_str() {
-                    if let Ok(json) = serde_json::to_vec(conv) {
-                        let _ = tree.insert(ex_id.as_bytes(), json);
-                        conv_count += 1;
+            let mut count = 0;
+            for item in arr {
+                let exercise_id = item["exerciseId"].as_str().unwrap_or("");
+                if exercise_id.is_empty() {
+                    continue;
+                }
+                let key = format!("aiconv_{}", exercise_id);
+                if let Ok(json) = serde_json::to_vec(item) {
+                    if let Err(e) = tree.insert(key.as_bytes(), json) {
+                        eprintln!("Failed to insert AI conversation: {}", e);
+                    } else {
+                        count += 1;
                     }
                 }
             }
+            counts.insert("conversationCount".into(), serde_json::Value::Number(count.into()));
         }
     }
 
     let resp = serde_json::json!({
         "success": true,
-        "vocabularyCount": vocab_count,
-        "exerciseCount": ex_count,
-        "tagsCount": tag_count,
-        "tensesCount": tense_count,
-        "conversationCount": conv_count,
+        "counts": counts,
     });
-    Ok(warp::reply::with_status(warp::reply::json(&resp), warp::http::StatusCode::OK))
+
+    Ok(warp::reply::with_status(
+        warp::reply::json(&resp),
+        warp::http::StatusCode::OK,
+    ))
 }
