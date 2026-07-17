@@ -1,4 +1,4 @@
-import { Component, Inject } from '@angular/core';
+import { Component, Inject, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MatCardModule } from '@angular/material/card';
@@ -17,6 +17,7 @@ export interface ExerciseListModalData {
   currentPage: number;
   uniqueTags: string[];
   selectedTags: string[];
+  refresh: () => void;
   onSelectExercise: (ex: any) => void;
   onEditExercise: (ex: any) => void;
   onDeleteExercise: (ex: any) => void;
@@ -42,11 +43,11 @@ export interface ExerciseListModalData {
           <div style="display: flex; gap: 12px; flex-wrap: wrap; align-items: center;">
             <mat-form-field appearance="outline" style="flex: 1; min-width: 180px;">
               <mat-label>Search</mat-label>
-              <input matInput [(ngModel)]="searchText" (input)="data.onUpdateFilter('searchText', searchText)" placeholder="Search...">
+              <input matInput [(ngModel)]="searchText" (input)="onSearchInput()" placeholder="Search...">
             </mat-form-field>
             <mat-form-field appearance="outline" style="width: 140px;">
               <mat-label>Language</mat-label>
-              <mat-select [(ngModel)]="practiceLanguage" (selectionChange)="data.onUpdateFilter('practiceLanguage', practiceLanguage)">
+              <mat-select [(ngModel)]="practiceLanguage" (selectionChange)="onFilterChange('practiceLanguage', practiceLanguage)">
                 <mat-option value="all">All</mat-option>
                 <mat-option value="en">English</mat-option>
                 <mat-option value="es">Spanish</mat-option>
@@ -55,7 +56,7 @@ export interface ExerciseListModalData {
             </mat-form-field>
             <mat-form-field appearance="outline" style="width: 140px;">
               <mat-label>Difficulty</mat-label>
-              <mat-select [(ngModel)]="difficulty" (selectionChange)="data.onUpdateFilter('difficulty', difficulty)">
+              <mat-select [(ngModel)]="difficulty" (selectionChange)="onFilterChange('difficulty', difficulty)">
                 <mat-option value="all">All</mat-option>
                 <mat-option value="easy">Easy</mat-option>
                 <mat-option value="medium">Medium</mat-option>
@@ -63,7 +64,7 @@ export interface ExerciseListModalData {
               </mat-select>
             </mat-form-field>
             @if (hasActiveFilters()) {
-              <button mat-button color="warn" (click)="data.onClearFilters()">
+              <button mat-button color="warn" (click)="data.onClearFilters(); data.refresh()">
                 <mat-icon>clear</mat-icon> Clear
               </button>
             }
@@ -73,7 +74,7 @@ export interface ExerciseListModalData {
             <div style="margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px;">
               @for (tag of data.uniqueTags; track tag) {
                 <div
-                  (click)="data.onToggleTagFilter(tag)"
+                  (click)="data.onToggleTagFilter(tag); data.refresh()"
                   [style.background]="data.selectedTags.includes(tag) ? '#3f51b5' : '#e0e0e0'"
                   [style.color]="data.selectedTags.includes(tag) ? '#fff' : '#333'"
                   style="padding: 2px 10px; border-radius: 12px; font-size: 0.8em; cursor: pointer;">
@@ -111,11 +112,11 @@ export interface ExerciseListModalData {
       <!-- Pagination -->
       @if (data.totalPages > 1) {
         <div style="display: flex; justify-content: center; gap: 8px; margin-top: 16px;">
-          <button mat-icon-button [disabled]="data.currentPage <= 1" (click)="data.onGoToFirstPage()"><mat-icon>first_page</mat-icon></button>
-          <button mat-icon-button [disabled]="data.currentPage <= 1" (click)="data.onGoToPreviousPage()"><mat-icon>chevron_left</mat-icon></button>
+          <button mat-icon-button [disabled]="data.currentPage <= 1" (click)="data.onGoToFirstPage(); data.refresh()"><mat-icon>first_page</mat-icon></button>
+          <button mat-icon-button [disabled]="data.currentPage <= 1" (click)="data.onGoToPreviousPage(); data.refresh()"><mat-icon>chevron_left</mat-icon></button>
           <span style="display: flex; align-items: center; padding: 0 12px;">{{ data.currentPage }} / {{ data.totalPages }}</span>
-          <button mat-icon-button [disabled]="data.currentPage >= data.totalPages" (click)="data.onGoToNextPage()"><mat-icon>chevron_right</mat-icon></button>
-          <button mat-icon-button [disabled]="data.currentPage >= data.totalPages" (click)="data.onGoToLastPage()"><mat-icon>last_page</mat-icon></button>
+          <button mat-icon-button [disabled]="data.currentPage >= data.totalPages" (click)="data.onGoToNextPage(); data.refresh()"><mat-icon>chevron_right</mat-icon></button>
+          <button mat-icon-button [disabled]="data.currentPage >= data.totalPages" (click)="data.onGoToLastPage(); data.refresh()"><mat-icon>last_page</mat-icon></button>
         </div>
       }
     </mat-dialog-content>
@@ -132,7 +133,18 @@ export class ExerciseListModalComponent {
   constructor(
     public dialogRef: MatDialogRef<ExerciseListModalComponent>,
     @Inject(MAT_DIALOG_DATA) public data: ExerciseListModalData,
+    private cdr: ChangeDetectorRef,
   ) {}
+
+  onSearchInput() {
+    this.data.onUpdateFilter('searchText', this.searchText);
+    this.data.refresh();
+  }
+
+  onFilterChange(key: string, value: string) {
+    this.data.onUpdateFilter(key, value);
+    this.data.refresh();
+  }
 
   hasActiveFilters(): boolean {
     return this.searchText.trim().length > 0 || this.practiceLanguage !== 'all' || this.difficulty !== 'all' || this.data.selectedTags.length > 0;

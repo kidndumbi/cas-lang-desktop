@@ -342,6 +342,9 @@ export class LanguageLearningPageComponent implements OnInit {
 
   // ─── Dialog Openers ──────────────────────────────────────────
 
+  private exerciseListData?: ExerciseListModalData;
+  private exerciseListDialogRef?: any;
+
   openTagManagementDialog() {
     const dialogRef = this.dialog.open(TagManagementModalComponent, {
       width: '500px',
@@ -360,25 +363,40 @@ export class LanguageLearningPageComponent implements OnInit {
     const dialogRef = this.dialog.open(ExerciseListModalComponent, {
       width: '900px',
       maxHeight: '80vh',
-      data: {
-        totalExercises: this.exercises.length,
-        paginatedExercises: this.paginatedExercises(),
-        totalPages: this.totalPages(),
-        currentPage: this.currentPage(),
-        uniqueTags: this.uniqueExerciseTags(),
-        selectedTags: this.selectedTagFilters(),
-        onSelectExercise: (ex: any) => this.selectExercise(ex),
-        onEditExercise: (ex: any) => this.editExercise(ex),
-        onDeleteExercise: (ex: any) => this.deleteExercise(ex),
-        onUpdateFilter: (key: string, value: string) => this.updateFilter(key, value),
-        onClearFilters: () => this.clearFilters(),
-        onToggleTagFilter: (tag: string) => this.toggleTagFilter(tag),
-        onGoToNextPage: () => this.goToNextPage(),
-        onGoToPreviousPage: () => this.goToPreviousPage(),
-        onGoToFirstPage: () => this.goToFirstPage(),
-        onGoToLastPage: () => this.goToLastPage(),
-      } satisfies ExerciseListModalData,
     });
+    this.exerciseListDialogRef = dialogRef;
+    this.exerciseListData = {
+      totalExercises: this.exercises.length,
+      paginatedExercises: [...this.paginatedExercises()],
+      totalPages: this.totalPages(),
+      currentPage: this.currentPage(),
+      uniqueTags: [...this.uniqueExerciseTags()],
+      selectedTags: [...this.selectedTagFilters()],
+      refresh: () => this.refreshExerciseListDialog(),
+      onSelectExercise: (ex: any) => this.selectExercise(ex),
+      onEditExercise: (ex: any) => this.editExercise(ex),
+      onDeleteExercise: (ex: any) => this.deleteExercise(ex),
+      onUpdateFilter: (key: string, value: string) => this.updateFilter(key, value),
+      onClearFilters: () => this.clearFilters(),
+      onToggleTagFilter: (tag: string) => this.toggleTagFilter(tag),
+      onGoToNextPage: () => this.goToNextPage(),
+      onGoToPreviousPage: () => this.goToPreviousPage(),
+      onGoToFirstPage: () => this.goToFirstPage(),
+      onGoToLastPage: () => this.goToLastPage(),
+    };
+    dialogRef.componentInstance.data = this.exerciseListData;
+  }
+
+  refreshExerciseListDialog() {
+    if (!this.exerciseListData || !this.exerciseListDialogRef) return;
+    // Mutate in-place so the dialog's data reference sees the changes
+    this.exerciseListData.totalExercises = this.exercises.length;
+    this.exerciseListData.paginatedExercises = [...this.paginatedExercises()];
+    this.exerciseListData.totalPages = this.totalPages();
+    this.exerciseListData.currentPage = this.currentPage();
+    this.exerciseListData.uniqueTags = [...this.uniqueExerciseTags()];
+    this.exerciseListData.selectedTags = [...this.selectedTagFilters()];
+    this.exerciseListDialogRef.componentInstance.cdr.detectChanges();
   }
 
   openCreateExerciseDialog() {
