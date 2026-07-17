@@ -76,12 +76,10 @@ async fn handle_get_all_vocabulary(
                 .filter_map(|(_, v)| serde_json::from_slice::<VocabularyWord>(&v).ok())
                 .collect();
 
-            // Apply filters
             if let Some(pl) = query.get("practiceLanguage") {
                 words.retain(|w| w.practice_language == *pl);
             }
-            if let (Some(nl), true) = (query.get("nativeLanguage"), true) {
-                // workaround for unused binding
+            if let Some(nl) = query.get("nativeLanguage") {
                 words.retain(|w| w.native_language == *nl);
             }
 
@@ -188,7 +186,6 @@ async fn handle_update_vocabulary(
                 let json = serde_json::to_vec(&word).unwrap();
                 let _ = tree.insert(id.as_bytes(), json);
 
-                // Log the update
                 log_vocabulary_update(&db, &id, &before, &after);
 
                 let resp = ApiResponse::success(word);
@@ -243,36 +240,30 @@ async fn handle_update_vocabulary_stats(
                 };
                 word.last_practiced = Some(AppDb::now_ms());
 
-                // Per-exercise-type stats
                 let ex_type = data.exercise_type.as_deref().unwrap_or("multiple-choice");
                 match ex_type {
                     "multiple-choice" => {
                         word.mc_total += 1;
-                        if data.correct {
-                            word.mc_correct += 1;
-                        }
+                        if data.correct { word.mc_correct += 1; }
                     }
                     "spell-word" => {
                         word.sw_total += 1;
-                        if data.correct {
-                            word.sw_correct += 1;
-                        }
+                        if data.correct { word.sw_correct += 1; }
                     }
                     "type-word" => {
                         word.tw_total += 1;
-                        if data.correct {
-                            word.tw_correct += 1;
-                        }
+                        if data.correct { word.tw_correct += 1; }
                     }
+                    "spell-verb-tense" | "spellVerbTense" => {}
+                    "choose-verb-tense" | "chooseVerbTense" => {}
                     _ => {}
                 }
 
                 let json = serde_json::to_vec(&word).unwrap();
                 let _ = tree.insert(id.as_bytes(), json);
 
-                // Log practice and session
                 log_vocabulary_practice(&db, &id, data.correct);
-                log_vocabulary_practice_session(&db, &id, data.correct);
+                log_vocabulary_practice_session(&db, &id, data.correct, ex_type);
 
                 let resp = EmptyResponse::success();
                 Ok(warp::reply::with_status(
@@ -309,7 +300,6 @@ async fn handle_delete_vocabulary(
     id: String,
     db: std::sync::Arc<AppDb>,
 ) -> Result<impl warp::Reply, warp::Rejection> {
-    // Delete the word
     match db.vocabulary() {
         Ok(tree) => {
             let _ = tree.remove(id.as_bytes());
@@ -323,7 +313,6 @@ async fn handle_delete_vocabulary(
         }
     }
 
-    // Delete associated logs
     delete_vocabulary_logs(&db, &id);
 
     let resp = EmptyResponse::success();
@@ -486,7 +475,7 @@ fn log_vocabulary_practice(db: &AppDb, word_id: &str, correct: bool) {
     }
 }
 
-fn log_vocabulary_practice_session(db: &AppDb, word_id: &str, correct: bool) {
+fn log_vocabulary_practice_session(db: &AppDb, word_id: &str, correct: bool, ex_type: &str) {
     if let Ok(tree) = db.vocabulary_session_logs() {
         let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
 
@@ -531,10 +520,33 @@ fn log_vocabulary_practice_session(db: &AppDb, word_id: &str, correct: bool) {
         if correct {
             session.correct_count += 1;
         }
-        // For now, default to multiple_choice stats (can be extended)
-        session.multiple_choice_attempts += 1;
-        if correct {
-            session.multiple_choice_correct += 1;
+        // Increment the correct per-exercise-type session stats
+        match ex_type {
+            "multiple-choice" => {
+                session.multiple_choice_attempts += 1;
+                if correct { session.multiple_choice_correct += 1; }
+            }
+            "spell-word" => {
+                session.spell_word_attempts += 1;
+                if correct { session.spell_word_correct += 1; }
+            }
+            "type-word" => {
+                session.type_word_attempts += 1;
+                if correct { session.type_word_correct += 1; }
+            }
+            "spell-verb-tense" | "spellVerbTense" => {
+                session.spell_verb_tense_attempts += 1;
+                if correct { session.spell_verb_tense_correct += 1; }
+            }
+            "choose-verb-tense" | "chooseVerbTense" => {
+                session.choose_verb_tense_attempts += 1;
+                if correct { session.choose_verb_tense_correct += 1; }
+            }
+            _ => {
+                // Default to multiple-choice for unrecognized types
+                session.multiple_choice_attempts += 1;
+                if correct { session.multiple_choice_correct += 1; }
+            }
         }
         if !session.words_attempted.contains(&word_id.to_string()) {
             session.words_attempted.push(word_id.to_string());
