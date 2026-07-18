@@ -1,17 +1,21 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, inject } from '@angular/core';
 import { FormBuilder, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { MatCardModule } from '@angular/material/card';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatSelectModule } from '@angular/material/select';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCheckboxModule } from '@angular/material/checkbox';
+import { MatInputModule } from '@angular/material/input';
+import { MatIconModule } from '@angular/material/icon';
+import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { CommonModule } from '@angular/common';
 import { SettingsService, AppSettings } from '../services/settings.service';
+import { LlmService } from '../services/llm.service';
 
 @Component({
   selector: 'app-settings',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, MatCardModule, MatFormFieldModule, MatSelectModule, MatButtonModule, MatCheckboxModule],
+  imports: [CommonModule, ReactiveFormsModule, MatCardModule, MatFormFieldModule, MatSelectModule, MatButtonModule, MatCheckboxModule, MatInputModule, MatIconModule, MatProgressSpinnerModule],
   template: `
     <div style="padding: 24px; max-width: 700px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px;">
       <!-- Languages -->
@@ -37,6 +41,43 @@ import { SettingsService, AppSettings } from '../services/settings.service';
             </mat-form-field>
             <button mat-raised-button color="primary" type="submit">Save</button>
           </form>
+        </mat-card-content>
+      </mat-card>
+
+      <!-- DeepSeek API Key -->
+      <mat-card>
+        <mat-card-header><mat-card-title>DeepSeek API Key</mat-card-title></mat-card-header>
+        <mat-card-content>
+          <p style="font-size: 0.85em; color: #888; margin-bottom: 12px;">
+            Used for AI translation and AI chat features. Get a key at <a href="https://platform.deepseek.com/api_keys" target="_blank">platform.deepseek.com</a>.
+          </p>
+          <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+            <mat-form-field appearance="outline" style="flex: 1; min-width: 250px;">
+              <mat-label>API Key</mat-label>
+              <input matInput [value]="llmService.deepseekApiKey()" (input)="onApiKeyChange($event)" placeholder="sk-..." type="password" [disabled]="llmService.isTestingDeepseekKey()">
+              <mat-icon matSuffix>key</mat-icon>
+            </mat-form-field>
+            <button mat-raised-button color="primary" (click)="saveAndTestApiKey()" [disabled]="llmService.isTestingDeepseekKey()">
+              @if (llmService.isTestingDeepseekKey()) {
+                <mat-spinner diameter="20" style="display: inline-block; margin-right: 8px;"></mat-spinner>
+              }
+              Save & Test
+            </button>
+          </div>
+          @if (llmService.deepseekKeyTestResult() !== 'idle') {
+            <div style="margin-top: 8px; padding: 8px 12px; border-radius: 4px;"
+              [style.background]="llmService.deepseekKeyTestResult() === 'success' ? '#e8f5e9' : '#fbe9e7'">
+              <span [style.color]="llmService.deepseekKeyTestResult() === 'success' ? '#2e7d32' : '#c62828'" style="font-size: 0.85em;">
+                @if (llmService.deepseekKeyTestResult() === 'success') {
+                  <mat-icon style="font-size: 16px; vertical-align: middle;">check_circle</mat-icon>
+                }
+                @else {
+                  <mat-icon style="font-size: 16px; vertical-align: middle;">error</mat-icon>
+                }
+                {{ llmService.deepseekKeyTestMessage() }}
+              </span>
+            </div>
+          }
         </mat-card-content>
       </mat-card>
 
@@ -76,6 +117,7 @@ import { SettingsService, AppSettings } from '../services/settings.service';
 })
 export class SettingsComponent implements OnInit {
   langForm: FormGroup;
+  llmService = inject(LlmService);
 
   practiceTypeDefs = [
     { id: 'arrange-words', label: 'Arrange Words', desc: 'Unscramble all words into the correct order.' },
@@ -89,6 +131,8 @@ export class SettingsComponent implements OnInit {
     { id: 'type-word', label: 'Type the Word', desc: 'See the definition, type the vocabulary word from memory.' },
   ];
 
+  private apiKeyDraft = '';
+
   constructor(private fb: FormBuilder, private ss: SettingsService) {
     const settings = this.ss.get();
     this.langForm = this.fb.group({
@@ -98,6 +142,18 @@ export class SettingsComponent implements OnInit {
   }
 
   ngOnInit() {}
+
+  onApiKeyChange(event: Event): void {
+    this.apiKeyDraft = (event.target as HTMLInputElement).value;
+  }
+
+  async saveAndTestApiKey(): Promise<void> {
+    const key = this.apiKeyDraft.trim();
+    this.llmService.setDeepseekApiKey(key);
+    if (key) {
+      await this.llmService.testDeepseekApiKey();
+    }
+  }
 
   saveLang() {
     if (this.langForm.valid) {

@@ -1,4 +1,4 @@
-import { Component, Inject, signal } from '@angular/core';
+import { Component, Inject, signal, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MatCardModule } from '@angular/material/card';
@@ -9,7 +9,9 @@ import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
 import { MatChipsModule } from '@angular/material/chips';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
-import { MatDialogRef, MAT_DIALOG_DATA, MatDialogModule } from '@angular/material/dialog';
+import { MatDialogRef, MAT_DIALOG_DATA, MatDialogModule, MatDialog } from '@angular/material/dialog';
+import { TranslationService } from '../../services/translation.service';
+import { ExerciseAiChatModalComponent, ExerciseAiChatModalData } from './exercise-ai-chat-modal.component';
 
 export interface EditExerciseModalData {
   exercise: any;
@@ -127,6 +129,19 @@ export interface EditExerciseModalData {
         <input matInput [(ngModel)]="tagsInput" placeholder="e.g. food, travel">
       </mat-form-field>
 
+      <!-- Translate & AI Review -->
+      <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+        <button mat-stroked-button color="primary" (click)="translate()"
+          [disabled]="isTranslating() || !nativeText.trim() || !nativeLanguage || !practiceLanguage || nativeLanguage === practiceLanguage">
+          @if (isTranslating()) { <mat-spinner diameter="16" style="display: inline-block; margin-right: 4px;"></mat-spinner> }
+          <mat-icon style="margin-right: 4px;">translate</mat-icon> Translate
+        </button>
+        <button mat-stroked-button (click)="openAiChat()"
+          [disabled]="!nativeText.trim() && !practiceText.trim()">
+          <mat-icon style="margin-right: 4px;">smart_toy</mat-icon> AI Review
+        </button>
+      </div>
+
       @if (data.allTags.length > 0) {
         <div style="margin-bottom: 12px; display: flex; flex-wrap: wrap; gap: 6px;">
           @for (tag of data.allTags; track tag) {
@@ -167,6 +182,10 @@ export class EditExerciseModalComponent {
   tagsInput: string;
   languages = signal<string[]>(['en', 'es', 'fr']);
   editError = signal<string | null>(null);
+  isTranslating = signal(false);
+
+  private translationService = inject(TranslationService);
+  private dialog = inject(MatDialog);
 
   constructor(
     public dialogRef: MatDialogRef<EditExerciseModalComponent>,
@@ -278,6 +297,39 @@ export class EditExerciseModalComponent {
     if (this.data.onViewLogs) {
       this.data.onViewLogs(this.data.exercise);
     }
+  }
+
+  async translate(): Promise<void> {
+    const native = this.nativeText.trim();
+    if (!native) { this.setError('No text to translate'); return; }
+    if (!this.nativeLanguage || !this.practiceLanguage) { this.setError('Please select both languages before translating'); return; }
+    if (this.nativeLanguage === this.practiceLanguage) { this.setError('Native and practice languages must be different for translation'); return; }
+
+    this.isTranslating.set(true);
+    this.editError.set(null);
+    try {
+      const translated = await this.translationService.translateText(native, this.nativeLanguage, this.practiceLanguage);
+      if (translated) {
+        this.practiceText = translated;
+      } else {
+        this.setError('Translation failed - no result returned');
+      }
+    } catch (error: any) {
+      const errorMsg = error instanceof Error ? error.message : 'Translation failed';
+      this.setError(errorMsg);
+    } finally {
+      this.isTranslating.set(false);
+    }
+  }
+
+  openAiChat(): void {
+    this.dialog.open(ExerciseAiChatModalComponent, {
+      width: '600px',
+      maxHeight: '80vh',
+      data: {
+        exercise: this.data.exercise,
+      } satisfies ExerciseAiChatModalData,
+    });
   }
 
   save() {

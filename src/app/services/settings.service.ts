@@ -5,6 +5,7 @@ export interface AppSettings {
   practiceLanguage: 'en' | 'es' | 'fr';
   practiceTypes: string[];
   vocabularyExerciseTypes: string[];
+  deepseekApiKey?: string;
 }
 
 const STORAGE_KEY = 'cas-lang-desktop-settings';
