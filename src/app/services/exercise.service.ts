@@ -34,4 +34,8 @@ export class ExerciseService {
   delete(id: string) {
     return this.ipc.invoke<void>('delete_exercise', { id });
   }
+
+  getExerciseLogs(exerciseId: string) {
+    return this.ipc.invoke<any>('get_exercise_logs', { exerciseId });
+  }
 }

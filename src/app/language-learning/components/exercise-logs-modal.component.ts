@@ -1,0 +1,132 @@
+import { Component, Inject, OnInit, signal } from '@angular/core';
+import { CommonModule, DatePipe } from '@angular/common';
+import { MatCardModule } from '@angular/material/card';
+import { MatButtonModule } from '@angular/material/button';
+import { MatIconModule } from '@angular/material/icon';
+import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { MatDialogRef, MAT_DIALOG_DATA, MatDialogModule } from '@angular/material/dialog';
+import { MatBadgeModule } from '@angular/material/badge';
+import { ExerciseService } from '../../services/exercise.service';
+
+export interface ExerciseLogsModalData {
+  exerciseId: string;
+}
+
+@Component({
+  selector: 'app-exercise-logs-modal',
+  standalone: true,
+  imports: [CommonModule, DatePipe, MatCardModule, MatButtonModule, MatIconModule, MatProgressSpinnerModule, MatDialogModule, MatBadgeModule],
+  template: `
+    <h2 mat-dialog-title style="display: flex; align-items: center; gap: 8px;">
+      <mat-icon>description</mat-icon> Exercise Logs
+    </h2>
+    <mat-dialog-content>
+      @if (isLoading()) {
+        <div style="display: flex; justify-content: center; padding: 2rem;">
+          <mat-spinner diameter="40"></mat-spinner>
+        </div>
+      }
+      @else if (loadError()) {
+        <div style="text-align: center; padding: 2rem; color: #c62828;">
+          {{ loadError() }}
+        </div>
+      }
+      @else if (entries().length === 0) {
+        <div style="text-align: center; padding: 2rem; color: #888;">
+          No logs yet for this exercise.
+        </div>
+      }
+      @else {
+        @for (entry of entries(); track entry.id) {
+          <div style="margin-bottom: 1rem; padding: 0.875rem; border-radius: 8px; background: #f5f5f5;"
+            [style.border-left]="'4px solid ' + (entry.type === 'practice' ? (entry.practiceDetails?.isCorrect ? '#4caf50' : '#f44336') : '#3f51b5')">
+            <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
+              <span style="font-size: 0.75rem; color: #888;">{{ entry.timestamp | date:'MMM d, y, h:mm a' }}</span>
+              @if (entry.type === 'practice') {
+                <span [style.background]="entry.practiceDetails?.isCorrect ? '#4caf50' : '#f44336'"
+                  style="color: white; padding: 1px 8px; border-radius: 10px; font-size: 0.65rem; font-weight: 500;">
+                  {{ entry.practiceDetails?.isCorrect ? '✓ Correct' : '✗ Wrong' }}
+                </span>
+              }
+              @else {
+                <span style="background: #3f51b5; color: white; padding: 1px 8px; border-radius: 10px; font-size: 0.65rem; font-weight: 500;">
+                  <mat-icon style="font-size: 0.7rem; width: 12px; height: 12px; vertical-align: middle;">edit</mat-icon> Updated
+                </span>
+              }
+            </div>
+            @if (entry.type === 'practice' && entry.practiceDetails) {
+              <div style="font-size: 0.8rem; display: flex; flex-direction: column; gap: 0.25rem;">
+                <div>
+                  <span style="color: #888; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.05em;">Your answer</span><br>
+                  <span [style.color]="entry.practiceDetails.isCorrect ? '#2e7d32' : '#c62828'">{{ entry.practiceDetails.userAnswer }}</span>
+                </div>
+                @if (!entry.practiceDetails.isCorrect) {
+                  <div>
+                    <span style="color: #888; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.05em;">Correct answer</span><br>
+                    <span style="color: #2e7d32">{{ entry.practiceDetails.correctAnswer }}</span>
+                  </div>
+                }
+              </div>
+            }
+            @if (entry.type === 'exercise-update' && entry.updateDetails) {
+              <div style="font-size: 0.8rem;">
+                @for (field of entry.updateDetails.changedFields; track field) {
+                  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; margin-top: 0.35rem;">
+                    <div style="background: rgba(244,67,54,0.08); padding: 0.3rem 0.4rem; border-radius: 4px;">
+                      <div style="font-size: 0.65rem; color: #f44336; margin-bottom: 0.1rem;">{{ field }} (before)</div>
+                      <div style="word-break: break-word;">{{ formatFieldValue(entry.updateDetails.before[field]) }}</div>
+                    </div>
+                    <div style="background: rgba(76,175,80,0.08); padding: 0.3rem 0.4rem; border-radius: 4px;">
+                      <div style="font-size: 0.65rem; color: #4caf50; margin-bottom: 0.1rem;">{{ field }} (after)</div>
+                      <div style="word-break: break-word;">{{ formatFieldValue(entry.updateDetails.after[field]) }}</div>
+                    </div>
+                  </div>
+                }
+              </div>
+            }
+          </div>
+        }
+      }
+    </mat-dialog-content>
+    <mat-dialog-actions align="end">
+      <button mat-button (click)="dialogRef.close()">Close</button>
+    </mat-dialog-actions>
+  `,
+})
+export class ExerciseLogsModalComponent implements OnInit {
+  isLoading = signal(false);
+  loadError = signal<string | null>(null);
+  entries = signal<any[]>([]);
+
+  constructor(
+    public dialogRef: MatDialogRef<ExerciseLogsModalComponent>,
+    @Inject(MAT_DIALOG_DATA) public data: ExerciseLogsModalData,
+    private exerciseService: ExerciseService,
+  ) {}
+
+  async ngOnInit() {
+    if (this.data.exerciseId) {
+      await this.loadLogs(this.data.exerciseId);
+    }
+  }
+
+  private async loadLogs(exerciseId: string) {
+    this.isLoading.set(true);
+    this.loadError.set(null);
+    try {
+      const data = await this.exerciseService.getExerciseLogs(exerciseId);
+      // Data comes back as { exerciseId, entries } from the backend
+      const rawEntries = data?.entries || data?.Entries || data?.ENTRIES || [];
+      this.entries.set([...rawEntries].sort((a: any, b: any) => b.timestamp - a.timestamp));
+    } catch (err: any) {
+      this.loadError.set(err?.message ?? 'Failed to load logs');
+    }
+    this.isLoading.set(false);
+  }
+
+  formatFieldValue(value: any): string {
+    if (Array.isArray(value)) return value.join(', ') || '(none)';
+    if (value === null || value === undefined || value === '') return '(empty)';
+    return String(value);
+  }
+}

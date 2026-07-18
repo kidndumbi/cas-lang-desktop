@@ -86,6 +86,7 @@ pub fn run() {
             commands::get_vocabulary_session_logs,
             commands::get_exercise_session_logs,
             commands::get_vocabulary_logs,
+            commands::get_exercise_logs,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

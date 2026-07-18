@@ -15,6 +15,7 @@ import { TagManagementModalComponent, TagManagementModalData } from './tag-manag
 import { ExerciseListModalComponent, ExerciseListModalData } from './exercise-list-modal.component';
 import { CreateExerciseModalComponent, CreateExerciseModalData } from './create-exercise-modal.component';
 import { EditExerciseModalComponent, EditExerciseModalData } from './edit-exercise-modal.component';
+import { ExerciseLogsModalComponent, ExerciseLogsModalData } from './exercise-logs-modal.component';
 
 type PracticeMode = 'arrange-words' | 'fill-in-missing' | 'spell-the-blanks';
 type FillPart = { text: string; isBlank: boolean; blankIdx: number };
@@ -555,6 +556,16 @@ export class LanguageLearningPageComponent implements OnInit {
 
   async editExercise(ex: any) { this.openEditExerciseDialog(ex); }
 
+  openExerciseLogsDialog(exerciseId: string) {
+    this.dialog.open(ExerciseLogsModalComponent, {
+      width: '600px',
+      maxHeight: '80vh',
+      data: {
+        exerciseId,
+      } satisfies ExerciseLogsModalData,
+    });
+  }
+
   openEditExerciseDialog(ex: any) {
     const isSaving = { value: false };
     const error = { value: '' };
@@ -584,8 +595,9 @@ export class LanguageLearningPageComponent implements OnInit {
           this.deleteExercise(exercise);
         },
         onViewLogs: (exercise: any) => {
-          console.log('[LanguageLearningPage] View logs requested for exercise:', exercise.id || exercise['id']);
-          this.snackBar.open('Exercise logs feature coming soon', 'OK', { duration: 2000 });
+          const exId = exercise.id || exercise['id'];
+          console.log('[LanguageLearningPage] View logs requested for exercise:', exId);
+          this.openExerciseLogsDialog(exId);
         },
       } satisfies EditExerciseModalData,
     });
