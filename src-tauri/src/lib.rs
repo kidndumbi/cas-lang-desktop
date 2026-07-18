@@ -31,10 +31,25 @@ pub fn run() {
     let cors = warp::cors()
         .allow_any_origin()
         .allow_methods(vec!["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"])
-        .allow_headers(vec!["*"])
+        .allow_headers(vec!["content-type", "authorization", "accept", "origin", "x-requested-with", "cache-control"])
+        .max_age(3600)
         .build();
 
-    let api_routes = routes::all_routes(db)
+    // Catch-all OPTIONS handler: responds to every preflight immediately with CORS headers.
+    // This ensures PATCH/DELETE preflights are never blocked regardless of route matching.
+    let cors_preflight = warp::options().map(|| {
+        warp::http::Response::builder()
+            .status(200)
+            .header("Access-Control-Allow-Origin", "*")
+            .header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+            .header("Access-Control-Allow-Headers", "content-type, authorization, accept, origin, x-requested-with, cache-control")
+            .header("Access-Control-Max-Age", "3600")
+            .body("")
+            .unwrap()
+    });
+
+    let api_routes = cors_preflight
+        .or(routes::all_routes(db))
         .or(warp::path!("api")
             .and(warp::get())
             .map(|| warp::reply::with_status("ok", warp::http::StatusCode::OK)))
