@@ -152,5 +152,13 @@ pub struct DbState(pub Arc<AppDb>);
         None => Ok(serde_json::json!({"wordId": word_id, "entries": []})),
     }
 }
+#[tauri::command] pub fn get_exercise_logs(state: State<DbState>, exercise_id: String) -> Result<Value, String> {
+    let tree = state.0.exercise_logs().map_err(|e| e.to_string())?;
+    let key = format!("exercise_logs_{}", exercise_id);
+    match tree.get(key.as_bytes()).map_err(|e| e.to_string())? {
+        Some(d) => Ok(serde_json::from_slice(&d).unwrap_or(serde_json::json!({"exerciseId": exercise_id, "entries": []}))),
+        None => Ok(serde_json::json!({"exerciseId": exercise_id, "entries": []})),
+    }
+}
 
 fn tree_remove(tree: &sled::Tree, key: &str) -> Result<(), String> { tree.remove(key.as_bytes()).map_err(|e| e.to_string())?; Ok::<(), String>(()) }
