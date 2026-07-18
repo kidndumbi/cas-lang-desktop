@@ -31,9 +31,13 @@ pub fn run() {
     let cors = warp::cors()
         .allow_any_origin()
         .allow_methods(vec!["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"])
-        .allow_headers(vec!["Content-Type", "Authorization"]);
+        .allow_headers(vec!["*"])
+        .build();
 
     let api_routes = routes::all_routes(db)
+        .or(warp::path!("api")
+            .and(warp::get())
+            .map(|| warp::reply::with_status("ok", warp::http::StatusCode::OK)))
         .or(warp::path!("api" / "test")
             .and(warp::get())
             .map(|| warp::reply::with_status("test success", warp::http::StatusCode::OK)))
