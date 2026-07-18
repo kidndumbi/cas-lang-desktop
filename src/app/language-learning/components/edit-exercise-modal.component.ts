@@ -17,6 +17,8 @@ export interface EditExerciseModalData {
   isSaving: boolean;
   error: string;
   onSaved: (data: any) => void;
+  onDelete?: (exercise: any) => void;
+  onViewLogs?: (exercise: any) => void;
 }
 
 @Component({
@@ -33,16 +35,63 @@ export interface EditExerciseModalData {
           <mat-card-content><p style="color: #c62828; margin: 0;">{{ data.error }}</p></mat-card-content>
         </mat-card>
       }
+      @if (editError()) {
+        <mat-card style="margin-bottom: 16px; background: #fbe9e7;">
+          <mat-card-content><p style="color: #c62828; margin: 0;">{{ editError() }}</p></mat-card-content>
+        </mat-card>
+      }
 
-      <mat-form-field appearance="outline" style="width: 100%; margin-bottom: 12px;">
+      <!-- Practice Language Text -->
+      <mat-form-field appearance="outline" style="width: 100%; margin-bottom: 4px;">
         <mat-label>Practice Language Text</mat-label>
         <textarea matInput [(ngModel)]="practiceText" rows="2"></textarea>
       </mat-form-field>
+      <div style="display: flex; gap: 4px; justify-content: flex-end; margin-bottom: 12px;">
+        <button mat-icon-button color="accent" matTooltip="Speak"
+          (click)="speak(practiceText, practiceLanguage)"
+          [disabled]="!practiceText.trim() || !practiceLanguage || data.isSaving">
+          <mat-icon>volume_up</mat-icon>
+        </button>
+        <button mat-icon-button matTooltip="Copy" (click)="copyText(practiceText)"
+          [disabled]="!practiceText.trim() || data.isSaving">
+          <mat-icon>content_copy</mat-icon>
+        </button>
+        <button mat-icon-button matTooltip="Paste" (click)="pasteToPracticeText()"
+          [disabled]="data.isSaving">
+          <mat-icon>content_paste</mat-icon>
+        </button>
+        <button mat-icon-button color="warn" matTooltip="Clear"
+          (click)="practiceText = ''"
+          [disabled]="!practiceText.trim() || data.isSaving">
+          <mat-icon>backspace</mat-icon>
+        </button>
+      </div>
 
-      <mat-form-field appearance="outline" style="width: 100%; margin-bottom: 12px;">
+      <!-- Native Language Text -->
+      <mat-form-field appearance="outline" style="width: 100%; margin-bottom: 4px;">
         <mat-label>Native Language Text</mat-label>
         <textarea matInput [(ngModel)]="nativeText" rows="2"></textarea>
       </mat-form-field>
+      <div style="display: flex; gap: 4px; justify-content: flex-end; margin-bottom: 12px;">
+        <button mat-icon-button color="accent" matTooltip="Speak"
+          (click)="speak(nativeText, nativeLanguage)"
+          [disabled]="!nativeText.trim() || !nativeLanguage || data.isSaving">
+          <mat-icon>volume_up</mat-icon>
+        </button>
+        <button mat-icon-button matTooltip="Copy" (click)="copyText(nativeText)"
+          [disabled]="!nativeText.trim() || data.isSaving">
+          <mat-icon>content_copy</mat-icon>
+        </button>
+        <button mat-icon-button matTooltip="Paste" (click)="pasteToNativeText()"
+          [disabled]="data.isSaving">
+          <mat-icon>content_paste</mat-icon>
+        </button>
+        <button mat-icon-button color="warn" matTooltip="Clear"
+          (click)="nativeText = ''"
+          [disabled]="!nativeText.trim() || data.isSaving">
+          <mat-icon>backspace</mat-icon>
+        </button>
+      </div>
 
       <div style="display: flex; gap: 12px; margin-bottom: 12px;">
         <mat-form-field appearance="outline" style="flex: 1;">
@@ -88,7 +137,18 @@ export interface EditExerciseModalData {
         </div>
       }
     </mat-dialog-content>
-    <mat-dialog-actions align="end">
+    <mat-dialog-actions align="end" style="display: flex; gap: 8px; flex-wrap: wrap;">
+      @if (data.onDelete) {
+        <button mat-button color="warn" (click)="deleteExercise()" [disabled]="data.isSaving"
+          style="margin-right: auto;">
+          <mat-icon>delete</mat-icon> Delete
+        </button>
+      }
+      @if (data.onViewLogs) {
+        <button mat-button (click)="viewLogs()" [disabled]="data.isSaving">
+          <mat-icon>description</mat-icon> View Logs
+        </button>
+      }
       <button mat-button (click)="dialogRef.close()">Cancel</button>
       <button mat-raised-button color="primary" (click)="save()"
         [disabled]="!practiceText.trim() || !nativeText.trim() || data.isSaving">
@@ -106,6 +166,7 @@ export class EditExerciseModalComponent {
   difficulty: string;
   tagsInput: string;
   languages = signal<string[]>(['en', 'es', 'fr']);
+  editError = signal<string | null>(null);
 
   constructor(
     public dialogRef: MatDialogRef<EditExerciseModalComponent>,
@@ -124,6 +185,99 @@ export class EditExerciseModalComponent {
   addTag(tag: string) {
     const tags = this.tagsInput.split(',').map(t => t.trim()).filter(t => t);
     if (!tags.includes(tag)) { tags.push(tag); this.tagsInput = tags.join(', '); }
+  }
+
+  speak(text: string, lang: string): void {
+    if (!text || !lang) return;
+    if (!('speechSynthesis' in window)) {
+      this.setError('Text-to-speech is not supported in this browser');
+      return;
+    }
+    const localeMap: Record<string, string> = { en: 'en-US', es: 'es-ES', fr: 'fr-FR' };
+    const locale = localeMap[lang] ?? 'en-US';
+
+    window.speechSynthesis.cancel();
+
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = locale;
+    utterance.rate = 0.9;
+
+    // Find a matching voice
+    const voices = window.speechSynthesis.getVoices();
+    const matchingVoice = voices.find(v => v.lang.startsWith(locale.split('-')[0]));
+    if (matchingVoice) {
+      utterance.voice = matchingVoice;
+    }
+
+    window.speechSynthesis.speak(utterance);
+  }
+
+  async copyText(text: string): Promise<void> {
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      // Fallback for older browsers
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.select();
+      try {
+        document.execCommand('copy');
+      } catch { /* ignore */ }
+      document.body.removeChild(textarea);
+    }
+  }
+
+  async pasteToNativeText(): Promise<void> {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text && text.trim()) {
+        this.nativeText = text;
+        this.editError.set(null);
+      } else {
+        this.setError('Clipboard is empty');
+      }
+    } catch {
+      this.setError('Unable to paste from clipboard');
+    }
+  }
+
+  async pasteToPracticeText(): Promise<void> {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text && text.trim()) {
+        this.practiceText = text;
+        this.editError.set(null);
+      } else {
+        this.setError('Clipboard is empty');
+      }
+    } catch {
+      this.setError('Unable to paste from clipboard');
+    }
+  }
+
+  private setError(message: string): void {
+    this.editError.set(message);
+    setTimeout(() => {
+      if (this.editError() === message) {
+        this.editError.set(null);
+      }
+    }, 3000);
+  }
+
+  deleteExercise(): void {
+    if (this.data.onDelete) {
+      this.data.onDelete(this.data.exercise);
+    }
+  }
+
+  viewLogs(): void {
+    if (this.data.onViewLogs) {
+      this.data.onViewLogs(this.data.exercise);
+    }
   }
 
   save() {

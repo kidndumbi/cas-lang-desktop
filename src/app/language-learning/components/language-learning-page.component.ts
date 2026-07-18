@@ -579,6 +579,14 @@ export class LanguageLearningPageComponent implements OnInit {
           } catch { error.value = 'Failed to update exercise'; }
           finally { isSaving.value = false; }
         },
+        onDelete: (exercise: any) => {
+          dialogRef.close();
+          this.deleteExercise(exercise);
+        },
+        onViewLogs: (exercise: any) => {
+          console.log('[LanguageLearningPage] View logs requested for exercise:', exercise.id || exercise['id']);
+          this.snackBar.open('Exercise logs feature coming soon', 'OK', { duration: 2000 });
+        },
       } satisfies EditExerciseModalData,
     });
   }
