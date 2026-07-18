@@ -1,4 +1,4 @@
-import { Component, OnInit, signal } from '@angular/core';
+import { Component, OnInit, signal, effect } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MatCardModule } from '@angular/material/card';
@@ -14,8 +14,10 @@ import { ExerciseStatsHeaderComponent } from './exercise-stats-header.component'
 import { TagManagementModalComponent, TagManagementModalData } from './tag-management-modal.component';
 import { ExerciseListModalComponent, ExerciseListModalData } from './exercise-list-modal.component';
 import { CreateExerciseModalComponent, CreateExerciseModalData } from './create-exercise-modal.component';
+import { EditExerciseModalComponent, EditExerciseModalData } from './edit-exercise-modal.component';
 
 type PracticeMode = 'arrange-words' | 'fill-in-missing' | 'spell-the-blanks';
+type FillPart = { text: string; isBlank: boolean; blankIdx: number };
 
 @Component({
   selector: 'app-language-learning-page',
@@ -66,20 +68,33 @@ type PracticeMode = 'arrange-words' | 'fill-in-missing' | 'spell-the-blanks';
       @if (exercise) {
         <mat-card style="margin-bottom: 16px;">
           <mat-card-content style="padding: 24px;">
-            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px;">
-              <div>
+            <!-- Header: language chip + difficulty + tags + action buttons -->
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
+              <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center;">
                 <mat-chip-set role="list">
                   <mat-chip-row role="listitem">{{ settings.practiceLanguage | uppercase }} → {{ settings.nativeLanguage | uppercase }}</mat-chip-row>
                 </mat-chip-set>
-                <div style="margin-top: 8px; font-size: 0.85em; color: #666;">
-                  Mode: {{ getModeName() }} · {{ (exercise.wordCount || exercise['word_count'] || 0) }} words
-                </div>
+                @if (exercise.difficulty) {
+                  <span [style.background]="getDifficultyColor(exercise.difficulty)" style="color: white; padding: 2px 10px; border-radius: 12px; font-size: 0.8em;">{{ exercise.difficulty }}</span>
+                }
+                @for (tag of getDisplayTags(); track tag) {
+                  <span style="background: #e3f2fd; padding: 2px 8px; border-radius: 10px; font-size: 0.75em; color: #1565c0;">{{ tag }}</span>
+                }
               </div>
-              @if (availablePracticeTypes.length > 1) {
-                <button mat-icon-button color="primary" (click)="toggleMode()" title="Switch mode">
-                  <mat-icon>swap_horiz</mat-icon>
+              <div style="display: flex; gap: 2px; flex-shrink: 0;">
+                <button mat-icon-button [color]="isFavorite() ? 'warn' : ''" (click)="toggleFavorite()" title="Favorite">
+                  <mat-icon>{{ isFavorite() ? 'star' : 'star_border' }}</mat-icon>
                 </button>
-              }
+                <button mat-icon-button [color]="isMarkedForReview() ? 'primary' : ''" (click)="toggleReview()" title="Mark for review">
+                  <mat-icon>{{ isMarkedForReview() ? 'bookmark' : 'bookmark_border' }}</mat-icon>
+                </button>
+                <button mat-icon-button color="primary" (click)="openEditExerciseDialog(exercise)" title="Edit exercise">
+                  <mat-icon>edit</mat-icon>
+                </button>
+              </div>
+            </div>
+            <div style="font-size: 0.8em; color: #666; margin-bottom: 16px;">
+              Mode: {{ getModeName() }} · {{ (exercise.wordCount || exercise['word_count'] || 0) }} words
             </div>
 
             <div style="background: #e8eaf6; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
@@ -112,18 +127,32 @@ type PracticeMode = 'arrange-words' | 'fill-in-missing' | 'spell-the-blanks';
 
             @if (currentMode === 'fill-in-missing') {
               <div>
-                <div style="font-size: 0.8em; color: #888; margin-bottom: 8px;">Fill in the missing words:</div>
-                <div style="font-size: 1.15em; line-height: 2.2;">
-                  @for (part of fillTemplate; track $index; let i = $index) {
-                    @if (part.isBlank) {
-                      <input type="text" [value]="blankAnswers[i] || ''" (input)="onBlankChange($event, i)" placeholder="?"
-                        style="width: 80px; padding: 4px 8px; border: 2px solid #3f51b5; border-radius: 4px; text-align: center; font-size: 1em; margin: 0 4px;" autocomplete="off" spellcheck="false">
-                    }
+                <div style="font-size: 0.8em; color: #888; margin-bottom: 8px;">Click words from the bank to fill the blanks (click a filled blank to return it):</div>
+                <div style="font-size: 1.1em; line-height: 2.8; margin-bottom: 16px;">
+                  @for (part of fillTemplate; track $index) {
                     @if (!part.isBlank) {
-                      <span>{{ part.text }}</span>
+                      <span style="margin: 0 2px;">{{ part.text }}</span>
+                    }
+                    @if (part.isBlank) {
+                      <span
+                        (click)="clearBlank(part.blankIdx)"
+                        [style.border-color]="filledBlanks[part.blankIdx] ? '#3f51b5' : '#bbb'"
+                        [style.background]="filledBlanks[part.blankIdx] ? '#e8eaf6' : '#fafafa'"
+                        [style.color]="filledBlanks[part.blankIdx] ? '#1a237e' : '#bbb'"
+                        style="display: inline-block; min-width: 80px; padding: 2px 12px; border: 2px solid; border-radius: 16px; cursor: pointer; margin: 0 4px; text-align: center; vertical-align: middle; transition: all 0.15s;">
+                        {{ filledBlanks[part.blankIdx] || '?' }}
+                      </span>
                     }
                   }
                 </div>
+                @if (fillWordBank.length > 0) {
+                  <div style="font-size: 0.8em; color: #888; margin-bottom: 6px;">Word bank:</div>
+                  <mat-chip-set style="display: flex; flex-wrap: wrap; gap: 6px;">
+                    @for (w of fillWordBank; track $index; let i = $index) {
+                      <mat-chip-row (click)="fillBlank(w, i)" color="accent" style="cursor: pointer;">{{ w }}</mat-chip-row>
+                    }
+                  </mat-chip-set>
+                }
               </div>
             }
 
@@ -131,9 +160,9 @@ type PracticeMode = 'arrange-words' | 'fill-in-missing' | 'spell-the-blanks';
               <div>
                 <div style="font-size: 0.8em; color: #888; margin-bottom: 8px;">Type the missing words from memory:</div>
                 <div style="font-size: 1.15em; line-height: 2.2;">
-                  @for (part of spellTemplate; track $index; let i = $index) {
+                  @for (part of spellTemplate; track $index) {
                     @if (part.isBlank) {
-                      <input type="text" [value]="spellAnswers[i] || ''" (input)="onSpellChange($event, i)" placeholder="?"
+                      <input type="text" [value]="spellAnswers[part.blankIdx] || ''" (input)="onSpellChange($event, part.blankIdx)" placeholder="?"
                         style="width: 80px; padding: 4px 8px; border: 2px solid #e91e63; border-radius: 4px; text-align: center; font-size: 1em; margin: 0 4px;" autocomplete="off" spellcheck="false">
                     }
                     @if (!part.isBlank) {
@@ -173,6 +202,9 @@ type PracticeMode = 'arrange-words' | 'fill-in-missing' | 'spell-the-blanks';
                 <button mat-button (click)="resetExercise()"><mat-icon>replay</mat-icon> Retry</button>
               </div>
             }
+            @if (exercise.videoFileName) {
+              <div style="margin-top: 12px; font-size: 0.75em; color: #aaa;">From: {{ exercise.videoFileName }}</div>
+            }
           </mat-card-content>
         </mat-card>
       }
@@ -189,9 +221,10 @@ export class LanguageLearningPageComponent implements OnInit {
   // Practice state
   availableWords: string[] = [];
   selectedWords: string[] = [];
-  fillTemplate: { text: string; isBlank: boolean }[] = [];
-  blankAnswers: string[] = [];
-  spellTemplate: { text: string; isBlank: boolean }[] = [];
+  fillTemplate: FillPart[] = [];
+  filledBlanks: (string | null)[] = [];
+  fillWordBank: string[] = [];
+  spellTemplate: FillPart[] = [];
   spellAnswers: string[] = [];
   showResult = false;
   isCorrect = false;
@@ -215,7 +248,7 @@ export class LanguageLearningPageComponent implements OnInit {
   currentPage = signal(1);
   uniqueExerciseTags = signal<string[]>([]);
   selectedTagFilters = signal<string[]>([]);
-  private filters: any = { searchText: '', practiceLanguage: 'all', difficulty: 'all' };
+  private filters: any = { searchText: '', practiceLanguage: 'all', nativeLanguage: 'all', difficulty: 'all', practiceStatus: 'all' };
   private pageSize = 20;
 
   constructor(
@@ -224,13 +257,21 @@ export class LanguageLearningPageComponent implements OnInit {
     private ss: SettingsService,
     private snackBar: MatSnackBar,
     private dialog: MatDialog,
-  ) {}
+  ) {
+    let practiceTypesInit = false;
+    effect(() => {
+      const types = this.ss.practiceTypes().filter(t => t !== 'conversation') as PracticeMode[];
+      this.availablePracticeTypes = types.length > 0 ? types : ['arrange-words'];
+      if (!this.availablePracticeTypes.includes(this.currentMode)) {
+        this.currentMode = this.availablePracticeTypes[0] as PracticeMode;
+      }
+      if (!practiceTypesInit) { practiceTypesInit = true; return; }
+      if (this.exercise) this.setupExercise();
+    });
+  }
 
   async ngOnInit() {
     this.settings = this.ss.get();
-    this.availablePracticeTypes = this.settings.practiceTypes.filter((t: string) => t !== 'conversation') as PracticeMode[];
-    if (this.availablePracticeTypes.length === 0) this.availablePracticeTypes = ['arrange-words'];
-    this.currentMode = this.availablePracticeTypes[0] as PracticeMode;
     this.loading.set(true);
     await Promise.all([this.loadExercises(), this.loadTags()]);
     this.loading.set(false);
@@ -263,40 +304,91 @@ export class LanguageLearningPageComponent implements OnInit {
     this.showResult = false;
     const text = this.exercise.practiceLanguageText || this.exercise['practice_language_text'] || '';
     const words = text.split(/\s+/).filter((w: string) => w.length > 0);
+    // Pick random mode from available types
+    const t = this.availablePracticeTypes;
+    this.currentMode = t.length === 1 ? (t[0] as PracticeMode) : (t[Math.floor(Math.random() * t.length)] as PracticeMode);
     if (this.currentMode === 'arrange-words') {
       this.selectedWords = [];
       this.availableWords = this.shuffle([...words]);
     } else if (this.currentMode === 'fill-in-missing') {
-      this.fillTemplate = []; this.blankAnswers = [];
-      const parts = text.split(/(\s+)/); let bi = 0;
-      for (const p of parts) {
-        const t = p.trim();
-        if (t.length === 0) this.fillTemplate.push({ text: p, isBlank: false });
-        else if (bi % 2 === 0) this.fillTemplate.push({ text: p, isBlank: false });
-        else { this.fillTemplate.push({ text: '', isBlank: true }); this.blankAnswers.push(''); }
-        if (t.length > 0) bi++;
-      }
-    } else {
+      const blankCount = Math.max(1, Math.floor(words.length / 3));
+      const shuffledIdx = [...Array(words.length).keys()].sort(() => Math.random() - 0.5);
+      const blankSet = new Set(shuffledIdx.slice(0, blankCount));
+      let fbi = 0;
+      this.fillTemplate = words.map((w: string, idx: number) => {
+        if (blankSet.has(idx)) return { text: w, isBlank: true, blankIdx: fbi++ };
+        return { text: w, isBlank: false, blankIdx: -1 };
+      });
+      this.filledBlanks = new Array(blankCount).fill(null);
+      this.fillWordBank = [...blankSet].map(i => words[i]).sort(() => Math.random() - 0.5);
       this.spellTemplate = []; this.spellAnswers = [];
-      const parts = text.split(/(\s+)/); let bi = 0;
-      for (const p of parts) {
-        const t = p.trim();
-        if (t.length === 0) this.spellTemplate.push({ text: p, isBlank: false });
-        else if (bi % 2 === 0) this.spellTemplate.push({ text: p, isBlank: false });
-        else { this.spellTemplate.push({ text: '', isBlank: true }); this.spellAnswers.push(''); }
-        if (t.length > 0) bi++;
-      }
+    } else {
+      const blankCount = Math.min(2, words.length);
+      const shuffledIdx = [...Array(words.length).keys()].sort(() => Math.random() - 0.5);
+      const blankSet = new Set(shuffledIdx.slice(0, blankCount));
+      let sbi = 0;
+      this.spellTemplate = words.map((w: string, idx: number) => {
+        if (blankSet.has(idx)) return { text: w, isBlank: true, blankIdx: sbi++ };
+        return { text: w, isBlank: false, blankIdx: -1 };
+      });
+      this.spellAnswers = new Array(blankCount).fill('');
+      this.fillTemplate = []; this.filledBlanks = []; this.fillWordBank = [];
     }
   }
 
   selectWord(w: string, i: number) { this.selectedWords.push(w); this.availableWords.splice(i, 1); }
   removeWord(i: number) { const w = this.selectedWords.splice(i, 1)[0]; this.availableWords.push(w); }
-  onBlankChange(e: Event, i: number) { this.blankAnswers[i] = (e.target as HTMLInputElement).value; }
   onSpellChange(e: Event, i: number) { this.spellAnswers[i] = (e.target as HTMLInputElement).value; }
+
+  fillBlank(word: string, wordIdx: number) {
+    const emptyIdx = this.filledBlanks.findIndex(b => b === null);
+    if (emptyIdx >= 0) { this.filledBlanks[emptyIdx] = word; this.fillWordBank = this.fillWordBank.filter((_, i) => i !== wordIdx); }
+  }
+
+  clearBlank(blankIdx: number) {
+    const word = this.filledBlanks[blankIdx];
+    if (word !== null && word !== undefined) { this.fillWordBank = [...this.fillWordBank, word]; this.filledBlanks[blankIdx] = null; }
+  }
+
+  isFavorite(): boolean { return this.exercise?.tags?.includes('favorite') ?? false; }
+  isMarkedForReview(): boolean { return this.exercise?.tags?.includes('review') ?? false; }
+  getDifficultyColor(d?: string): string {
+    return d === 'easy' ? '#4caf50' : d === 'medium' ? '#ff9800' : '#f44336';
+  }
+  getDisplayTags(): string[] {
+    return (this.exercise?.tags || []).filter((t: string) => !['favorite', 'review', 'ignore'].includes(t));
+  }
+
+  async toggleFavorite() {
+    if (!this.exercise?.id) return;
+    const tags = [...(this.exercise.tags || [])];
+    const idx = tags.indexOf('favorite');
+    if (idx >= 0) tags.splice(idx, 1); else tags.push('favorite');
+    try {
+      await this.exerciseService.update(this.exercise.id, { ...this.exercise, tags });
+      this.exercise = { ...this.exercise, tags };
+      const i = this.exercises.findIndex((e: any) => e.id === this.exercise.id);
+      if (i >= 0) this.exercises[i] = this.exercise;
+      this.favoriteCount.set(this.exercises.filter((e: any) => e.tags?.includes('favorite')).length);
+    } catch {}
+  }
+
+  async toggleReview() {
+    if (!this.exercise?.id) return;
+    const tags = [...(this.exercise.tags || [])];
+    const idx = tags.indexOf('review');
+    if (idx >= 0) tags.splice(idx, 1); else tags.push('review');
+    try {
+      await this.exerciseService.update(this.exercise.id, { ...this.exercise, tags });
+      this.exercise = { ...this.exercise, tags };
+      const i = this.exercises.findIndex((e: any) => e.id === this.exercise.id);
+      if (i >= 0) this.exercises[i] = this.exercise;
+    } catch {}
+  }
 
   canSubmit(): boolean {
     if (this.currentMode === 'arrange-words') return this.selectedWords.length > 0 && this.availableWords.length === 0;
-    if (this.currentMode === 'fill-in-missing') return this.blankAnswers.every(a => a.trim().length > 0);
+    if (this.currentMode === 'fill-in-missing') return this.filledBlanks.every(b => b !== null);
     return this.spellAnswers.every(a => a.trim().length > 0);
   }
 
@@ -308,22 +400,25 @@ export class LanguageLearningPageComponent implements OnInit {
     if (this.currentMode === 'arrange-words') {
       user = this.selectedWords.join(' ');
     } else if (this.currentMode === 'fill-in-missing') {
-      let bi = 0;
+      const parts: string[] = [];
       for (const p of this.fillTemplate) {
-        if (p.isBlank) { user += (user.length > 0 ? ' ' : '') + this.blankAnswers[bi]; bi++; }
-        else user += (user.length > 0 ? ' ' : '') + p.text.trim();
+        const t = p.isBlank ? (this.filledBlanks[p.blankIdx] || '') : p.text.trim();
+        if (t) parts.push(t);
       }
+      user = parts.join(' ');
     } else {
-      let bi = 0;
+      const parts: string[] = [];
       for (const p of this.spellTemplate) {
-        if (p.isBlank) { user += (user.length > 0 ? ' ' : '') + this.spellAnswers[bi]; bi++; }
-        else user += (user.length > 0 ? ' ' : '') + p.text.trim();
+        const t = p.isBlank ? (this.spellAnswers[p.blankIdx] || '') : p.text.trim();
+        if (t) parts.push(t);
       }
+      user = parts.join(' ');
     }
     const normalizedUser = normalizeAnswer(user);
     this.isCorrect = normalizedUser === answer;
     if (this.isCorrect) this.sessionCorrect++;
-    try { await this.exerciseService.updateStats(this.exercise.id || this.exercise['id'], this.isCorrect); } catch {}
+    const snapshot = { userAnswer: user, correctAnswer: this.exercise.practiceLanguageText || '', nativeText: this.exercise.nativeLanguageText || '', practiceMode: this.currentMode };
+    try { await this.exerciseService.updateStats(this.exercise.id || this.exercise['id'], this.isCorrect, snapshot); } catch {}
   }
 
   resetExercise() { this.setupExercise(); }
@@ -385,6 +480,8 @@ export class LanguageLearningPageComponent implements OnInit {
       onGoToPreviousPage: () => this.goToPreviousPage(),
       onGoToFirstPage: () => this.goToFirstPage(),
       onGoToLastPage: () => this.goToLastPage(),
+      isFavorite: (ex: any) => ex?.tags?.includes('favorite') ?? false,
+      isMarkedForReview: (ex: any) => ex?.tags?.includes('review') ?? false,
     };
     dialogRef.componentInstance.data = this.exerciseListData;
   }
@@ -456,8 +553,34 @@ export class LanguageLearningPageComponent implements OnInit {
     } catch { this.snackBar.open('Failed to delete', 'OK', { duration: 3000 }); }
   }
 
-  async editExercise(ex: any) {
-    this.snackBar.open('Edit exercise coming soon', 'OK', { duration: 2000 });
+  async editExercise(ex: any) { this.openEditExerciseDialog(ex); }
+
+  openEditExerciseDialog(ex: any) {
+    const isSaving = { value: false };
+    const error = { value: '' };
+    const dialogRef = this.dialog.open(EditExerciseModalComponent, {
+      width: '600px',
+      data: {
+        exercise: ex,
+        allTags: this.allTags(),
+        get isSaving() { return isSaving.value; },
+        get error() { return error.value; },
+        onSaved: async (updated: any) => {
+          isSaving.value = true;
+          try {
+            await this.exerciseService.update(ex.id || ex['id'], updated);
+            dialogRef.close();
+            if (this.exercise?.id === (ex.id || ex['id'])) {
+              this.exercise = { ...this.exercise, ...updated };
+              this.setupExercise();
+            }
+            await this.loadExercises();
+            this.snackBar.open('Exercise updated', 'OK', { duration: 2000 });
+          } catch { error.value = 'Failed to update exercise'; }
+          finally { isSaving.value = false; }
+        },
+      } satisfies EditExerciseModalData,
+    });
   }
 
   updateFilter(key: string, value: string) {
@@ -466,7 +589,7 @@ export class LanguageLearningPageComponent implements OnInit {
   }
 
   clearFilters() {
-    this.filters = { searchText: '', practiceLanguage: 'all', difficulty: 'all' };
+    this.filters = { searchText: '', practiceLanguage: 'all', nativeLanguage: 'all', difficulty: 'all', practiceStatus: 'all' };
     this.selectedTagFilters.set([]);
     this.applyPagination();
   }
@@ -492,11 +615,22 @@ export class LanguageLearningPageComponent implements OnInit {
         (e.practiceLanguageText || '').toLowerCase().includes(q) ||
         (e.nativeLanguageText || '').toLowerCase().includes(q));
     }
-    if (this.filters.practiceLanguage !== 'all') {
+    if (this.filters.practiceLanguage && this.filters.practiceLanguage !== 'all') {
       list = list.filter((e: any) => e.practiceLanguage === this.filters.practiceLanguage);
     }
-    if (this.filters.difficulty !== 'all') {
+    if (this.filters.nativeLanguage && this.filters.nativeLanguage !== 'all') {
+      list = list.filter((e: any) => e.nativeLanguage === this.filters.nativeLanguage);
+    }
+    if (this.filters.difficulty && this.filters.difficulty !== 'all') {
       list = list.filter((e: any) => e.difficulty === this.filters.difficulty);
+    }
+    if (this.filters.practiceStatus && this.filters.practiceStatus !== 'all') {
+      switch (this.filters.practiceStatus) {
+        case 'never': list = list.filter((e: any) => !e.practiceCount || e.practiceCount === 0); break;
+        case 'low-accuracy': list = list.filter((e: any) => e.accuracyRate !== undefined && e.accuracyRate < 70); break;
+        case 'high-accuracy': list = list.filter((e: any) => e.accuracyRate !== undefined && e.accuracyRate >= 70); break;
+        case 'favorites': list = list.filter((e: any) => e.tags?.includes('favorite')); break;
+      }
     }
     if (this.selectedTagFilters().length > 0) {
       list = list.filter((e: any) => {

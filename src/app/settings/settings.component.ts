@@ -53,12 +53,6 @@ import { SettingsService, AppSettings } from '../services/settings.service';
               </mat-checkbox>
             </div>
           }
-          <div style="margin-top: 8px;">
-            <mat-checkbox [checked]="settings.spellTheBlanksEnabled" (change)="toggleSpellTheBlanks($event.checked)">
-              <strong>Spell the Blanks</strong>
-              <br><small style="color: #888;">Half the sentence is shown; type the missing words from memory.</small>
-            </mat-checkbox>
-          </div>
         </mat-card-content>
       </mat-card>
 
@@ -82,12 +76,11 @@ import { SettingsService, AppSettings } from '../services/settings.service';
 })
 export class SettingsComponent implements OnInit {
   langForm: FormGroup;
-  settings: AppSettings;
 
   practiceTypeDefs = [
     { id: 'arrange-words', label: 'Arrange Words', desc: 'Unscramble all words into the correct order.' },
-    { id: 'fill-in-missing', label: 'Fill in Missing Words', desc: 'Half the sentence is shown; supply the rest by tapping word chips.' },
-    { id: 'conversation', label: 'Dialogue Practice', desc: 'AI generates a two-line dialogue; pick the correct response from 4 options. Requires AI.' },
+    { id: 'fill-in-missing', label: 'Fill in Missing Words', desc: 'Half the sentence is shown; type the missing words.' },
+    { id: 'spell-the-blanks', label: 'Spell the Blanks', desc: 'Half the sentence is shown; type the missing words from memory.' },
   ];
 
   vocabTypeDefs = [
@@ -97,10 +90,10 @@ export class SettingsComponent implements OnInit {
   ];
 
   constructor(private fb: FormBuilder, private ss: SettingsService) {
-    this.settings = this.ss.get();
+    const settings = this.ss.get();
     this.langForm = this.fb.group({
-      nativeLanguage: [this.settings.nativeLanguage],
-      practiceLanguage: [this.settings.practiceLanguage],
+      nativeLanguage: [settings.nativeLanguage],
+      practiceLanguage: [settings.practiceLanguage],
     });
   }
 
@@ -113,21 +106,9 @@ export class SettingsComponent implements OnInit {
     }
   }
 
-  isPracticeTypeEnabled(id: string) { return this.settings.practiceTypes.includes(id); }
-  isVocabTypeEnabled(id: string) { return this.settings.vocabularyExerciseTypes.includes(id); }
+  isPracticeTypeEnabled(id: string) { return this.ss.practiceTypes().includes(id); }
+  isVocabTypeEnabled(id: string) { return this.ss.vocabularyExerciseTypes().includes(id); }
 
-  togglePracticeType(id: string, enabled: boolean) {
-    this.ss.togglePracticeType(id, enabled);
-    this.settings = this.ss.get();
-  }
-  toggleVocabType(id: string, enabled: boolean) {
-    this.ss.toggleVocabularyExerciseType(id, enabled);
-    this.settings = this.ss.get();
-  }
-  toggleSpellTheBlanks(enabled: boolean) {
-    this.settings.spellTheBlanksEnabled = enabled;
-    if (enabled) { if (!this.settings.practiceTypes.includes('spell-the-blanks')) this.settings.practiceTypes.push('spell-the-blanks'); }
-    else { const i = this.settings.practiceTypes.indexOf('spell-the-blanks'); if (i >= 0) this.settings.practiceTypes.splice(i, 1); }
-    this.ss.update({ practiceTypes: this.settings.practiceTypes });
-  }
+  togglePracticeType(id: string, enabled: boolean) { this.ss.togglePracticeType(id, enabled); }
+  toggleVocabType(id: string, enabled: boolean) { this.ss.toggleVocabularyExerciseType(id, enabled); }
 }
