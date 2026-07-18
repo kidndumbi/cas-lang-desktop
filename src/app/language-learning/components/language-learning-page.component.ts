@@ -302,10 +302,11 @@ export class LanguageLearningPageComponent implements OnInit {
 
   async submitAnswer() {
     this.showResult = true; this.sessionAttempts++;
-    const answer = (this.exercise.practiceLanguageText || this.exercise['practice_language_text'] || '').toLowerCase().trim();
+    const normalizeAnswer = (ans: string) => ans.normalize('NFD').replace(/[.,!?;:"'\-¿¡]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+    const answer = normalizeAnswer(this.exercise.practiceLanguageText || this.exercise['practice_language_text'] || '');
     let user = '';
     if (this.currentMode === 'arrange-words') {
-      user = this.selectedWords.join(' ').toLowerCase().trim();
+      user = this.selectedWords.join(' ');
     } else if (this.currentMode === 'fill-in-missing') {
       let bi = 0;
       for (const p of this.fillTemplate) {
@@ -319,7 +320,8 @@ export class LanguageLearningPageComponent implements OnInit {
         else user += (user.length > 0 ? ' ' : '') + p.text.trim();
       }
     }
-    this.isCorrect = user.toLowerCase().trim() === answer;
+    const normalizedUser = normalizeAnswer(user);
+    this.isCorrect = normalizedUser === answer;
     if (this.isCorrect) this.sessionCorrect++;
     try { await this.exerciseService.updateStats(this.exercise.id || this.exercise['id'], this.isCorrect); } catch {}
   }
