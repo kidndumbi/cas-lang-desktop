@@ -29,6 +29,16 @@ html, body {
   background: #f5f5f5;
 }
 
+html {
+  font-size: 200%;
+}
+
+@media (min-width: 2400px) {
+  html {
+    font-size: 400%;
+  }
+}
+
 // Override specific Material colors to better match cas-lang green
 .mat-mdc-raised-button.mat-primary,
 .mat-mdc-unelevated-button.mat-primary,
