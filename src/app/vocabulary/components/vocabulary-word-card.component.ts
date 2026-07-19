@@ -127,7 +127,7 @@ type VocabExerciseType = 'multiple-choice' | 'spell-word' | 'type-word';
             </div>
             @if (!isCorrect()) {
               <div style="font-size: 0.9em; color: #666;">
-                Correct answer: <strong>{{ word().translation }}</strong>
+                Correct answer: <strong>{{ exerciseMode() === 'multiple-choice' ? word().translation : word().word }}</strong>
               </div>
             }
           </div>
