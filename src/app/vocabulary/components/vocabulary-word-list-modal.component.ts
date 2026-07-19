@@ -17,7 +17,7 @@ import { MatSelectModule } from '@angular/material/select';
       <mat-card style="width: 90%; max-width: 900px; max-height: 80vh; overflow: hidden; display: flex; flex-direction: column;">
         <mat-card-header>
           <mat-card-title style="display: flex; align-items: center; gap: 8px;">
-            <mat-icon>list</mat-icon> All Words ({{ words().length }})
+            <mat-icon>list</mat-icon> All Words ({{ totalWords() }})
           </mat-card-title>
           <button mat-icon-button (click)="close.emit()" style="margin-left: auto;">
             <mat-icon>close</mat-icon>
@@ -48,6 +48,18 @@ import { MatSelectModule } from '@angular/material/select';
               </mat-select>
             </mat-form-field>
           </div>
+          @if (uniqueTags().length > 0) {
+            <div style="margin-bottom: 12px; display: flex; flex-wrap: wrap; gap: 6px;">
+              @for (tag of uniqueTags(); track tag) {
+                <div (click)="toggleTag.emit(tag)"
+                  [style.background]="selectedTags().includes(tag) ? '#3f51b5' : '#e0e0e0'"
+                  [style.color]="selectedTags().includes(tag) ? '#fff' : '#333'"
+                  style="padding: 2px 10px; border-radius: 12px; font-size: 0.8em; cursor: pointer;">
+                  {{ tag }}
+                </div>
+              }
+            </div>
+          }
           @for (w of words(); track w.id || $index) {
             <mat-card style="margin-bottom: 8px; cursor: pointer;" (click)="selectWord.emit(w)">
               <mat-card-content style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px;">
@@ -79,6 +91,25 @@ import { MatSelectModule } from '@angular/material/select';
               </mat-card-content>
             </mat-card>
           }
+
+          <!-- Pagination -->
+          @if (totalPages() > 1) {
+            <div style="display: flex; justify-content: center; align-items: center; gap: 8px; margin-top: 16px;">
+              <button mat-icon-button [disabled]="currentPage() <= 1" (click)="goToFirstPage.emit()">
+                <mat-icon>first_page</mat-icon>
+              </button>
+              <button mat-icon-button [disabled]="currentPage() <= 1" (click)="goToPreviousPage.emit()">
+                <mat-icon>chevron_left</mat-icon>
+              </button>
+              <span style="padding: 0 12px;">{{ currentPage() }} / {{ totalPages() }}</span>
+              <button mat-icon-button [disabled]="currentPage() >= totalPages()" (click)="goToNextPage.emit()">
+                <mat-icon>chevron_right</mat-icon>
+              </button>
+              <button mat-icon-button [disabled]="currentPage() >= totalPages()" (click)="goToLastPage.emit()">
+                <mat-icon>last_page</mat-icon>
+              </button>
+            </div>
+          }
         </mat-card-content>
       </mat-card>
     </div>
@@ -89,6 +120,9 @@ export class VocabularyWordListModalComponent {
   filterText = input<string>('');
   filterLanguage = input<string>('');
   filterDifficulty = input<string>('');
+  totalWords = input<number>(0);
+  totalPages = input<number>(1);
+  currentPage = input<number>(1);
 
   filterTextChange = output<string>();
   filterLanguageChange = output<string>();
@@ -98,13 +132,20 @@ export class VocabularyWordListModalComponent {
   editWord = output<any>();
   deleteWord = output<any>();
   close = output<void>();
+  goToNextPage = output<void>();
+  goToPreviousPage = output<void>();
+  goToFirstPage = output<void>();
+  goToLastPage = output<void>();
+  toggleTag = output<string>();
+
+  uniqueTags = input<string[]>([]);
+  selectedTags = input<string[]>([]);
 
   filterTextDraft = '';
   filterLanguageDraft = '';
   filterDifficultyDraft = '';
 
   constructor() {
-    // Sync initial values
     this.filterTextDraft = this.filterText();
     this.filterLanguageDraft = this.filterLanguage();
     this.filterDifficultyDraft = this.filterDifficulty();

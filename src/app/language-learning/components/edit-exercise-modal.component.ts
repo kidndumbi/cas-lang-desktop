@@ -12,6 +12,7 @@ import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatDialogRef, MAT_DIALOG_DATA, MatDialogModule, MatDialog } from '@angular/material/dialog';
 import { TranslationService } from '../../services/translation.service';
 import { ExerciseAiChatModalComponent, ExerciseAiChatModalData } from './exercise-ai-chat-modal.component';
+import { addTagWithMutualExclusion } from '../../utils/tag-mutual-exclusion.util';
 
 export interface EditExerciseModalData {
   exercise: any;
@@ -124,11 +125,6 @@ export interface EditExerciseModalData {
         </mat-select>
       </mat-form-field>
 
-      <mat-form-field appearance="outline" style="width: 100%; margin-bottom: 12px;">
-        <mat-label>Tags (comma-separated)</mat-label>
-        <input matInput [(ngModel)]="tagsInput" placeholder="e.g. food, travel">
-      </mat-form-field>
-
       <!-- Translate & AI Review -->
       <div style="display: flex; gap: 8px; margin-bottom: 12px;">
         <button mat-stroked-button color="primary" (click)="translate()"
@@ -142,15 +138,48 @@ export interface EditExerciseModalData {
         </button>
       </div>
 
-      @if (data.allTags.length > 0) {
-        <div style="margin-bottom: 12px; display: flex; flex-wrap: wrap; gap: 6px;">
-          @for (tag of data.allTags; track tag) {
-            <div (click)="addTag(tag)" style="padding: 2px 10px; border-radius: 12px; font-size: 0.8em; cursor: pointer; background: #e3f2fd;">
-              <mat-icon style="font-size: 14px; margin-right: 2px; vertical-align: middle;">add</mat-icon>{{ tag }}
+      <!-- Tags -->
+      <mat-card style="margin-bottom: 12px;">
+        <mat-card-header style="padding-bottom: 4px;">
+          <mat-card-title style="font-size: 0.95rem;">Exercise Tags</mat-card-title>
+        </mat-card-header>
+        <mat-card-content>
+          @if (formTagList.length > 0) {
+            <div style="margin-bottom: 8px;">
+              <div style="font-size: 0.8em; color: #888; margin-bottom: 4px;">Current Tags:</div>
+              <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+                @for (tag of formTagList; track tag) {
+                  <span (click)="removeTag(tag)" style="background: #e3f2fd; padding: 4px 10px; border-radius: 12px; font-size: 0.8em; cursor: pointer; display: flex; align-items: center; gap: 4px;">
+                    {{ tag }}
+                    <mat-icon style="font-size: 14px; color: #f44336;">close</mat-icon>
+                  </span>
+                }
+              </div>
             </div>
           }
-        </div>
-      }
+          <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+            <mat-form-field appearance="outline" style="flex: 1;">
+              <input matInput [(ngModel)]="formTagInput" placeholder="Add tag..." (keydown.enter)="addTypedTag()">
+            </mat-form-field>
+            <button mat-raised-button color="primary" (click)="addTypedTag()"
+              [disabled]="!formTagInput.trim() || formTagList.includes(formTagInput.trim().toLowerCase())">
+              <mat-icon>add</mat-icon> Add
+            </button>
+          </div>
+          @if (data.allTags.length > 0) {
+            <div style="font-size: 0.8em; color: #888; margin-bottom: 4px;">Quick Add from Existing:</div>
+            <div style="display: flex; flex-wrap: wrap; gap: 6px; max-height: 80px; overflow-y: auto; padding: 6px; background: #f5f5f5; border-radius: 8px;">
+              @for (tag of data.allTags; track tag) {
+                @if (!formTagList.includes(tag)) {
+                  <span (click)="addExistingTag(tag)" style="background: #e0e0e0; padding: 2px 8px; border-radius: 10px; font-size: 0.75em; cursor: pointer;">
+                    {{ tag }}
+                  </span>
+                }
+              }
+            </div>
+          }
+        </mat-card-content>
+      </mat-card>
     </mat-dialog-content>
     <mat-dialog-actions align="end" style="display: flex; gap: 8px; flex-wrap: wrap;">
       @if (data.onDelete) {
@@ -179,7 +208,8 @@ export class EditExerciseModalComponent {
   practiceLanguage: string;
   nativeLanguage: string;
   difficulty: string;
-  tagsInput: string;
+  formTagList: string[] = [];
+  formTagInput = '';
   languages = signal<string[]>(['en', 'es', 'fr']);
   editError = signal<string | null>(null);
   isTranslating = signal(false);
@@ -198,12 +228,24 @@ export class EditExerciseModalComponent {
     this.nativeLanguage = ex.nativeLanguage || ex['native_language'] || '';
     this.difficulty = ex.difficulty || '';
     const existingTags = (ex.tags || []).filter((t: string) => !['favorite', 'review', 'ignore'].includes(t));
-    this.tagsInput = existingTags.join(', ');
+    this.formTagList = [...existingTags];
   }
 
-  addTag(tag: string) {
-    const tags = this.tagsInput.split(',').map(t => t.trim()).filter(t => t);
-    if (!tags.includes(tag)) { tags.push(tag); this.tagsInput = tags.join(', '); }
+  addTypedTag(): void {
+    const tag = this.formTagInput.trim().toLowerCase();
+    if (!tag || this.formTagList.includes(tag)) return;
+    this.formTagList = addTagWithMutualExclusion(this.formTagList, tag);
+    this.formTagInput = '';
+  }
+
+  removeTag(tag: string): void {
+    this.formTagList = this.formTagList.filter(t => t !== tag);
+  }
+
+  addExistingTag(tag: string): void {
+    if (!this.formTagList.includes(tag)) {
+      this.formTagList = addTagWithMutualExclusion(this.formTagList, tag);
+    }
   }
 
   speak(text: string, lang: string): void {
@@ -221,7 +263,6 @@ export class EditExerciseModalComponent {
     utterance.lang = locale;
     utterance.rate = 0.9;
 
-    // Find a matching voice
     const voices = window.speechSynthesis.getVoices();
     const matchingVoice = voices.find(v => v.lang.startsWith(locale.split('-')[0]));
     if (matchingVoice) {
@@ -236,16 +277,13 @@ export class EditExerciseModalComponent {
     try {
       await navigator.clipboard.writeText(text);
     } catch {
-      // Fallback for older browsers
       const textarea = document.createElement('textarea');
       textarea.value = text;
       textarea.style.position = 'fixed';
       textarea.style.opacity = '0';
       document.body.appendChild(textarea);
       textarea.select();
-      try {
-        document.execCommand('copy');
-      } catch { /* ignore */ }
+      try { document.execCommand('copy'); } catch { /* ignore */ }
       document.body.removeChild(textarea);
     }
   }
@@ -333,8 +371,7 @@ export class EditExerciseModalComponent {
   }
 
   save() {
-    const userTags = this.tagsInput.split(',').map(t => t.trim()).filter(t => t);
-    // Preserve system tags (favorite, review, ignore)
+    const userTags = this.formTagList;
     const systemTags = (this.data.exercise.tags || []).filter((t: string) => ['favorite', 'review', 'ignore'].includes(t));
     const tags = [...new Set([...systemTags, ...userTags])];
     const wordCount = this.practiceText.trim().split(/\s+/).filter(w => w.length > 0).length;
