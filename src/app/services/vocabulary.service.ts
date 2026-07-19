@@ -31,4 +31,8 @@ export class VocabularyService {
   delete(id: string) {
     return this.ipc.invoke<void>('delete_vocabulary', { id });
   }
+
+  getLogs(wordId: string) {
+    return this.ipc.invoke<any>('get_vocabulary_logs', { wordId });
+  }
 }

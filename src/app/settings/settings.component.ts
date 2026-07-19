@@ -123,6 +123,7 @@ export class SettingsComponent implements OnInit {
     { id: 'arrange-words', label: 'Arrange Words', desc: 'Unscramble all words into the correct order.' },
     { id: 'fill-in-missing', label: 'Fill in Missing Words', desc: 'Half the sentence is shown; type the missing words.' },
     { id: 'spell-the-blanks', label: 'Spell the Blanks', desc: 'Half the sentence is shown; type the missing words from memory.' },
+    { id: 'conversation', label: 'Dialogue Practice', desc: 'AI generates a two-line dialogue; pick the correct response from 4 options. Requires AI.' },
   ];
 
   vocabTypeDefs = [

@@ -13,7 +13,7 @@ const STORAGE_KEY = 'cas-lang-desktop-settings';
 const DEFAULTS: AppSettings = {
   nativeLanguage: 'en',
   practiceLanguage: 'es',
-  practiceTypes: ['arrange-words', 'fill-in-missing', 'spell-the-blanks'],
+  practiceTypes: ['arrange-words', 'fill-in-missing', 'spell-the-blanks', 'conversation'],
   vocabularyExerciseTypes: ['multiple-choice', 'spell-word', 'type-word'],
 };
 

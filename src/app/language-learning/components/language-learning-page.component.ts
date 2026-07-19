@@ -1,4 +1,4 @@
-import { Component, OnInit, signal, effect } from '@angular/core';
+import { Component, OnInit, signal, effect, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MatCardModule } from '@angular/material/card';
@@ -7,9 +7,11 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatChipsModule } from '@angular/material/chips';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { MatDialog, MatDialogModule } from '@angular/material/dialog';
+import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { ExerciseService } from '../../services/exercise.service';
 import { TagService } from '../../services/tag.service';
 import { SettingsService } from '../../services/settings.service';
+import { LlmService } from '../../services/llm.service';
 import { ExerciseStatsHeaderComponent } from './exercise-stats-header.component';
 import { TagManagementModalComponent, TagManagementModalData } from './tag-management-modal.component';
 import { ExerciseListModalComponent, ExerciseListModalData } from './exercise-list-modal.component';
@@ -17,15 +19,21 @@ import { CreateExerciseModalComponent, CreateExerciseModalData } from './create-
 import { EditExerciseModalComponent, EditExerciseModalData } from './edit-exercise-modal.component';
 import { ExerciseLogsModalComponent, ExerciseLogsModalData } from './exercise-logs-modal.component';
 
-type PracticeMode = 'arrange-words' | 'fill-in-missing' | 'spell-the-blanks';
+type PracticeMode = 'arrange-words' | 'fill-in-missing' | 'spell-the-blanks' | 'conversation';
 type FillPart = { text: string; isBlank: boolean; blankIdx: number };
+
+interface ConversationChallenge {
+  line1: string;
+  options: string[];
+  correctIndex: number;
+}
 
 @Component({
   selector: 'app-language-learning-page',
   standalone: true,
   imports: [
     CommonModule, FormsModule,
-    MatCardModule, MatButtonModule, MatIconModule, MatChipsModule, MatSnackBarModule, MatDialogModule,
+    MatCardModule, MatButtonModule, MatIconModule, MatChipsModule, MatSnackBarModule, MatDialogModule, MatProgressSpinnerModule,
     ExerciseStatsHeaderComponent,
   ],
   template: `
@@ -103,6 +111,46 @@ type FillPart = { text: string; isBlank: boolean; blankIdx: number };
               <div style="font-size: 1.1em; font-weight: 500;">{{ exercise.nativeLanguageText || exercise['native_language_text'] }}</div>
             </div>
 
+            @if (currentMode === 'conversation') {
+              <!-- Dialogue Practice mode -->
+              @if (isGeneratingConversation()) {
+                <div style="display: flex; align-items: center; gap: 12px; padding: 24px; justify-content: center;">
+                  <mat-spinner diameter="24"></mat-spinner>
+                  <span style="color: #888;">Generating dialogue...</span>
+                </div>
+              }
+              @else if (conversationChallenge()) {
+                <div>
+                  <div style="font-size: 0.85em; color: #888; margin-bottom: 4px;">A says:</div>
+                  <div style="background: #f5f5f5; border: 2px solid #9e9e9e; border-radius: 8px; padding: 16px; margin-bottom: 20px; display: flex; align-items: flex-start; gap: 8px;">
+                    <div style="flex: 1; font-size: 1.05rem; font-weight: 500; line-height: 1.5;">{{ conversationChallenge()!.line1 }}</div>
+                    <button mat-icon-button matTooltip="Copy" (click)="copyText(conversationChallenge()!.line1)" style="flex-shrink: 0;">
+                      <mat-icon style="font-size: 18px;">content_copy</mat-icon>
+                    </button>
+                  </div>
+                  <div style="font-size: 0.85em; color: #888; margin-bottom: 8px;">B responds with:</div>
+                  @for (option of conversationChallenge()!.options; track $index) {
+                    <div style="margin-bottom: 10px;">
+                      <button mat-stroked-button
+                        [style.background]="getConversationBg($index)"
+                        [style.color]="showResult && (conversationChallenge()!.correctIndex === $index || selectedConversationIndex === $index) ? 'white' : ''"
+                        [style.border-color]="getConversationBorder($index)"
+                        [disabled]="showResult"
+                        (click)="selectConversationOption($index)"
+                        style="width: 100%; justify-content: flex-start; padding: 12px 16px; height: auto; white-space: normal; text-align: left; line-height: 1.4;">
+                        {{ option }}
+                      </button>
+                    </div>
+                  }
+                </div>
+              }
+              @else {
+                <div style="display: flex; justify-content: center; padding: 24px; color: #888;">
+                  Could not generate dialogue. Try next exercise.
+                </div>
+              }
+            }
+
             @if (currentMode === 'arrange-words') {
               <div>
                 <div style="font-size: 0.8em; color: #888; margin-bottom: 8px;">Arrange the words in correct order:</div>
@@ -167,7 +215,7 @@ type FillPart = { text: string; isBlank: boolean; blankIdx: number };
                         style="width: 80px; padding: 4px 8px; border: 2px solid #e91e63; border-radius: 4px; text-align: center; font-size: 1em; margin: 0 4px;" autocomplete="off" spellcheck="false">
                     }
                     @if (!part.isBlank) {
-                      <span>{{ part.text }}</span>
+                      <span style="margin: 0 2px;">{{ part.text }}</span>
                     }
                   }
                 </div>
@@ -181,15 +229,20 @@ type FillPart = { text: string; isBlank: boolean; blankIdx: number };
                   <mat-icon [style.color]="isCorrect ? '#2e7d32' : '#c62828'">{{ isCorrect ? 'check_circle' : 'cancel' }}</mat-icon>
                   <strong [style.color]="isCorrect ? '#2e7d32' : '#c62828'">{{ isCorrect ? 'Correct!' : 'Incorrect' }}</strong>
                 </div>
-                @if (!isCorrect) {
+                @if (!isCorrect && currentMode !== 'conversation') {
                   <div style="font-size: 0.9em; color: #666;">
                     Correct answer: <strong>{{ exercise.practiceLanguageText || exercise['practice_language_text'] }}</strong>
+                  </div>
+                }
+                @if (!isCorrect && currentMode === 'conversation') {
+                  <div style="font-size: 0.9em; color: #666;">
+                    The correct response is highlighted in green above.
                   </div>
                 }
               </div>
             }
 
-            @if (!showResult) {
+            @if (!showResult && currentMode !== 'conversation') {
               <div style="margin-top: 16px; display: flex; gap: 8px;">
                 <button mat-raised-button color="primary" (click)="submitAnswer()" [disabled]="!canSubmit()">
                   <mat-icon>check</mat-icon> Check Answer
@@ -197,9 +250,11 @@ type FillPart = { text: string; isBlank: boolean; blankIdx: number };
                 <button mat-button (click)="resetExercise()"><mat-icon>refresh</mat-icon> Reset</button>
               </div>
             }
-            @if (showResult) {
+            @if (showResult || currentMode === 'conversation') {
               <div style="margin-top: 16px; display: flex; gap: 8px;">
-                <button mat-raised-button color="primary" (click)="nextExercise()"><mat-icon>chevron_right</mat-icon> Next Exercise</button>
+                @if (showResult) {
+                  <button mat-raised-button color="primary" (click)="nextExercise()"><mat-icon>chevron_right</mat-icon> Next Exercise</button>
+                }
                 <button mat-button (click)="resetExercise()"><mat-icon>replay</mat-icon> Retry</button>
               </div>
             }
@@ -233,6 +288,11 @@ export class LanguageLearningPageComponent implements OnInit {
   sessionAttempts = 0;
   private usedIndices: number[] = [];
 
+  // Conversation state
+  conversationChallenge = signal<ConversationChallenge | null>(null);
+  isGeneratingConversation = signal(false);
+  selectedConversationIndex: number | null = null;
+
   // Signals
   loading = signal(false);
   favoriteCount = signal(0);
@@ -252,16 +312,17 @@ export class LanguageLearningPageComponent implements OnInit {
   private filters: any = { searchText: '', practiceLanguage: 'all', nativeLanguage: 'all', difficulty: 'all', practiceStatus: 'all' };
   private pageSize = 20;
 
-  constructor(
-    private exerciseService: ExerciseService,
-    private tagService: TagService,
-    private ss: SettingsService,
-    private snackBar: MatSnackBar,
-    private dialog: MatDialog,
-  ) {
+  private llmService = inject(LlmService);
+  private exerciseService = inject(ExerciseService);
+  private tagService = inject(TagService);
+  private ss = inject(SettingsService);
+  private snackBar = inject(MatSnackBar);
+  private dialog = inject(MatDialog);
+
+  constructor() {
     let practiceTypesInit = false;
     effect(() => {
-      const types = this.ss.practiceTypes().filter(t => t !== 'conversation') as PracticeMode[];
+      const types = this.ss.practiceTypes() as PracticeMode[];
       this.availablePracticeTypes = types.length > 0 ? types : ['arrange-words'];
       if (!this.availablePracticeTypes.includes(this.currentMode)) {
         this.currentMode = this.availablePracticeTypes[0] as PracticeMode;
@@ -303,12 +364,19 @@ export class LanguageLearningPageComponent implements OnInit {
 
   setupExercise() {
     this.showResult = false;
+    this.conversationChallenge.set(null);
+    this.selectedConversationIndex = null;
     const text = this.exercise.practiceLanguageText || this.exercise['practice_language_text'] || '';
     const words = text.split(/\s+/).filter((w: string) => w.length > 0);
     // Pick random mode from available types
     const t = this.availablePracticeTypes;
     this.currentMode = t.length === 1 ? (t[0] as PracticeMode) : (t[Math.floor(Math.random() * t.length)] as PracticeMode);
-    if (this.currentMode === 'arrange-words') {
+    if (this.currentMode === 'conversation') {
+      this.selectedWords = []; this.availableWords = [];
+      this.fillTemplate = []; this.filledBlanks = []; this.fillWordBank = [];
+      this.spellTemplate = []; this.spellAnswers = [];
+      this.generateConversation();
+    } else if (this.currentMode === 'arrange-words') {
       this.selectedWords = [];
       this.availableWords = this.shuffle([...words]);
     } else if (this.currentMode === 'fill-in-missing') {
@@ -358,6 +426,85 @@ export class LanguageLearningPageComponent implements OnInit {
   }
   getDisplayTags(): string[] {
     return (this.exercise?.tags || []).filter((t: string) => !['favorite', 'review', 'ignore'].includes(t));
+  }
+
+  async copyText(text: string): Promise<void> {
+    if (!text) return;
+    try { await navigator.clipboard.writeText(text); } catch {}
+  }
+
+  getConversationBg(index: number): string {
+    if (!this.showResult) return '';
+    const challenge = this.conversationChallenge();
+    if (!challenge) return '';
+    if (index === challenge.correctIndex) return '#4caf50';
+    if (index === this.selectedConversationIndex && index !== challenge.correctIndex) return '#f44336';
+    return '';
+  }
+
+  getConversationBorder(index: number): string {
+    if (!this.showResult) return '';
+    const challenge = this.conversationChallenge();
+    if (!challenge) return '';
+    if (index === challenge.correctIndex) return '#388e3c';
+    if (index === this.selectedConversationIndex && index !== challenge.correctIndex) return '#d32f2f';
+    return '';
+  }
+
+  async generateConversation(): Promise<void> {
+    const ex = this.exercise;
+    if (!ex) return;
+    this.isGeneratingConversation.set(true);
+    this.conversationChallenge.set(null);
+
+    const langName = (code: string) => code === 'es' ? 'Spanish' : code === 'fr' ? 'French' : 'English';
+    const practiceLang = langName(ex.practiceLanguage || ex['practice_language'] || 'en');
+    const practiceText = ex.practiceLanguageText || ex['practice_language_text'] || '';
+    const prompt = `You are a language learning assistant. Create a short two-line dialogue loosely inspired by this ${practiceLang} sentence: "${practiceText}"\n\nThe dialogue should be in ${practiceLang}. Line 1 is a question or statement from person A. Provide 4 possible responses for person B where only ONE is natural and correct. The other 3 wrong options must be CLEARLY wrong.\n\nRespond ONLY with valid JSON: {"line1":"...","options":["correct","wrong","wrong","wrong"],"correctIndex":0}. Shuffle the options.`;
+
+    try {
+      const raw = await this.llmService.generateWithDeepseek(prompt);
+      const jsonStr = raw.replace(/```json|```/g, '').trim();
+      const parsed = JSON.parse(jsonStr) as ConversationChallenge;
+      if (parsed.line1 && Array.isArray(parsed.options) && parsed.options.length === 4) {
+        const correct = parsed.options[parsed.correctIndex];
+        const shuffled = [...parsed.options].sort(() => Math.random() - 0.5);
+        this.conversationChallenge.set({ line1: parsed.line1, options: shuffled, correctIndex: shuffled.indexOf(correct) });
+      }
+    } catch {
+      this.conversationChallenge.set(null);
+    } finally {
+      this.isGeneratingConversation.set(false);
+    }
+  }
+
+  selectConversationOption(index: number): void {
+    if (this.showResult) return;
+    const challenge = this.conversationChallenge();
+    if (!challenge) return;
+
+    this.selectedConversationIndex = index;
+    this.sessionAttempts++;
+
+    const correct = index === challenge.correctIndex;
+    this.isCorrect = correct;
+    if (correct) this.sessionCorrect++;
+    this.showResult = true;
+
+    const snapshot = {
+      userAnswer: challenge.options[index],
+      correctAnswer: challenge.options[challenge.correctIndex],
+      nativeText: this.exercise.nativeLanguageText || this.exercise['native_language_text'] || '',
+      practiceMode: this.currentMode,
+      options: challenge.options,
+    };
+    try {
+      this.exerciseService.updateStats(
+        this.exercise.id || this.exercise['id'],
+        correct,
+        snapshot,
+      );
+    } catch {}
   }
 
   async toggleFavorite() {
@@ -423,7 +570,12 @@ export class LanguageLearningPageComponent implements OnInit {
   }
 
   resetExercise() { this.setupExercise(); }
-  nextExercise() { this.pickRandomExercise(); }
+  nextExercise() {
+    this.pickRandomExercise();
+    if (this.currentMode === 'conversation') {
+      this.generateConversation();
+    }
+  }
   restartSession() { this.usedIndices = []; this.sessionCorrect = 0; this.sessionAttempts = 0; this.pickRandomExercise(); }
 
   toggleMode() {
@@ -435,7 +587,8 @@ export class LanguageLearningPageComponent implements OnInit {
   getModeName() {
     if (this.currentMode === 'arrange-words') return 'Arrange Words';
     if (this.currentMode === 'fill-in-missing') return 'Fill in Missing';
-    return 'Spell the Blanks';
+    if (this.currentMode === 'spell-the-blanks') return 'Spell the Blanks';
+    return 'Dialogue Practice';
   }
 
   // ─── Dialog Openers ──────────────────────────────────────────
