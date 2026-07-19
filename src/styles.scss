@@ -33,9 +33,13 @@ html {
   font-size: 200%;
 }
 
+// body, .cdk-overlay-container, mat-dialog-container, .mat-mdc-dialog-surface {
+//   font-size: inherit;
+// }
+
 @media (min-width: 2400px) {
   html {
-    font-size: 400%;
+    font-size: 260%;
   }
 }
 
@@ -52,4 +56,9 @@ html {
 
 .mat-mdc-icon-button.mat-primary {
   --mdc-icon-button-icon-color: #4b7d3c;
+}
+
+/* Widen content area cards across all pages */
+mat-sidenav-content > :not(router-outlet) > div:first-child {
+  max-width: 1400px !important;
 }
