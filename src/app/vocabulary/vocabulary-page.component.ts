@@ -109,19 +109,29 @@ type VocabExerciseType = 'multiple-choice' | 'spell-word' | 'type-word';
 
     <!-- Word List Modal -->
     @if (showWordList) {
-      <app-vocabulary-word-list-modal
-        [words]="filteredWords"
+    <app-vocabulary-word-list-modal
+        [words]="paginatedFilteredWords"
         [filterText]="filterText"
         [filterLanguage]="filterLanguage"
         [filterDifficulty]="filterDifficulty"
+        [totalWords]="filteredWords.length"
+        [totalPages]="wordListTotalPages()"
+        [currentPage]="wordListCurrentPage()"
+        [uniqueTags]="uniqueWordTags()"
+        [selectedTags]="selectedWordTags()"
         (filterTextChange)="filterText = $event"
         (filterLanguageChange)="filterLanguage = $event"
         (filterDifficultyChange)="filterDifficulty = $event"
-        (filterApply)="applyFilter()"
+        (filterApply)="applyFilter(); wordListCurrentPage.set(1)"
         (selectWord)="selectWord($event); showWordList = false"
+        (toggleTag)="toggleTagFilter($event)"
         (editWord)="selectWord($event); showWordList = false; openEditWord($event)"
         (deleteWord)="deleteWord($event)"
-        (close)="showWordList = false">
+        (close)="showWordList = false"
+        (goToNextPage)="wordListGoToNextPage()"
+        (goToPreviousPage)="wordListGoToPrevPage()"
+        (goToFirstPage)="wordListCurrentPage.set(1)"
+        (goToLastPage)="wordListCurrentPage.set(wordListTotalPages())">
       </app-vocabulary-word-list-modal>
     }
 
@@ -168,6 +178,34 @@ export class VocabularyPageComponent implements OnInit {
   loading = signal(false);
   favoriteCount = signal(0);
   allTags = signal<string[]>([]);
+  wordListCurrentPage = signal(1);
+  selectedWordTags = signal<string[]>([]);
+
+  uniqueWordTags(): string[] {
+    return [...new Set(this.words.flatMap(w => (w.tags || []).filter((t: string) => !['favorite', 'review', 'ignore'].includes(t))))];
+  }
+
+  toggleTagFilter(tag: string): void {
+    const tags = [...this.selectedWordTags()];
+    const idx = tags.indexOf(tag);
+    if (idx >= 0) tags.splice(idx, 1); else tags.push(tag);
+    this.selectedWordTags.set(tags);
+    this.applyFilter();
+    this.wordListCurrentPage.set(1);
+  }
+  private wordListPageSize = 20;
+  paginatedFilteredWords: any[] = [];
+
+  wordListTotalPages() { return Math.max(1, Math.ceil(this.filteredWords.length / this.wordListPageSize)); }
+  wordListGoToNextPage() { if (this.wordListCurrentPage() < this.wordListTotalPages()) { this.wordListCurrentPage.update(p => p + 1); this.updatePaginatedWords(); } }
+  wordListGoToPrevPage() { if (this.wordListCurrentPage() > 1) { this.wordListCurrentPage.update(p => p - 1); this.updatePaginatedWords(); } }
+  wordListGoToFirstPage() { this.wordListCurrentPage.set(1); this.updatePaginatedWords(); }
+  wordListGoToLastPage() { this.wordListCurrentPage.set(this.wordListTotalPages()); this.updatePaginatedWords(); }
+
+  private updatePaginatedWords(): void {
+    const start = (this.wordListCurrentPage() - 1) * this.wordListPageSize;
+    this.paginatedFilteredWords = this.filteredWords.slice(start, start + this.wordListPageSize);
+  }
 
   private vocab = inject(VocabularyService);
   private tagService = inject(TagService);
@@ -198,7 +236,14 @@ export class VocabularyPageComponent implements OnInit {
     if (this.filterText) { const q = this.filterText.toLowerCase(); list = list.filter(w => (w.word || '').toLowerCase().includes(q) || (w.translation || '').toLowerCase().includes(q)); }
     if (this.filterLanguage) list = list.filter(w => (w.practiceLanguage || '') === this.filterLanguage);
     if (this.filterDifficulty) list = list.filter(w => w.difficulty === this.filterDifficulty);
+    if (this.selectedWordTags().length > 0) {
+      list = list.filter(w => {
+        const t: string[] = w.tags || [];
+        return this.selectedWordTags().some(tag => t.includes(tag));
+      });
+    }
     this.filteredWords = list;
+    this.updatePaginatedWords();
   }
 
   sessionAccuracy() { return this.sessionAttempts === 0 ? 0 : Math.round((this.sessionCorrect / this.sessionAttempts) * 100); }
