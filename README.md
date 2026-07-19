@@ -16,3 +16,9 @@ For Desktop development, run:
 
 For Android development, run:
   npm run tauri android dev
+
+build for pro:
+npm run tauri build
+D:\local_apps\cas-lang-desktop\src-tauri\target\release\bundle\nsis\
+D:\local_apps\cas-lang-desktop\src-tauri\target\release\bundle\msi\
+
