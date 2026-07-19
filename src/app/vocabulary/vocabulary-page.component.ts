@@ -128,6 +128,7 @@ type VocabExerciseType = 'multiple-choice' | 'spell-word' | 'type-word';
     <!-- Create Word Modal -->
     <app-vocabulary-create-word-modal
       [isOpen]="showCreateModal"
+      [allTags]="allTags()"
       (closed)="showCreateModal = false"
       (created)="showCreateModal = false; load()">
     </app-vocabulary-create-word-modal>
@@ -136,8 +137,9 @@ type VocabExerciseType = 'multiple-choice' | 'spell-word' | 'type-word';
     <app-vocabulary-edit-word-modal
       [isOpen]="showEditModal"
       [word]="editingWord"
+      [allTags]="allTags()"
       (closed)="showEditModal = false"
-      (saved)="showEditModal = false; load()">
+      (saved)="handleEditSave($event)">
     </app-vocabulary-edit-word-modal>
   `,
 })
@@ -165,8 +167,10 @@ export class VocabularyPageComponent implements OnInit {
 
   loading = signal(false);
   favoriteCount = signal(0);
+  allTags = signal<string[]>([]);
 
   private vocab = inject(VocabularyService);
+  private tagService = inject(TagService);
   private settings = inject(SettingsService);
   private snackBar = inject(MatSnackBar);
 
@@ -176,7 +180,12 @@ export class VocabularyPageComponent implements OnInit {
     this.loading.set(true);
     try {
       const s = this.settings.get();
-      this.words = await this.vocab.getAll(s.practiceLanguage, s.nativeLanguage);
+      const [words, tags] = await Promise.all([
+        this.vocab.getAll(s.practiceLanguage, s.nativeLanguage),
+        this.tagService.getAll(),
+      ]);
+      this.words = words;
+      this.allTags.set(tags);
       this.favoriteCount.set(this.words.filter((w: any) => w.tags?.includes('favorite')).length);
       this.applyFilter();
       if (this.words.length > 0 && !this.currentWord) this.pickNextWord();
@@ -308,6 +317,30 @@ export class VocabularyPageComponent implements OnInit {
 
   openWordList() { this.applyFilter(); this.showWordList = true; }
   openEditWord(w: any) { this.editingWord = w; this.showEditModal = true; }
+
+  async handleEditSave(payload: { word: string; translation: string; difficulty: string; notes: string; tags: string[] }): Promise<void> {
+    if (!this.editingWord?.id) return;
+    const updated = {
+      ...this.editingWord,
+      word: payload.word,
+      translation: payload.translation,
+      difficulty: payload.difficulty || undefined,
+      notes: payload.notes || undefined,
+      tags: payload.tags,
+    };
+    try {
+      await this.vocab.update(this.editingWord.id, updated);
+      // Update local state immediately
+      const idx = this.words.findIndex(w => w.id === this.editingWord.id);
+      if (idx >= 0) this.words[idx] = updated;
+      if (this.currentWord?.id === this.editingWord.id) this.currentWord = updated;
+      this.applyFilter();
+      this.showEditModal = false;
+      this.snackBar.open('Word updated', 'OK', { duration: 2000 });
+    } catch {
+      this.snackBar.open('Failed to update word', 'OK', { duration: 3000 });
+    }
+  }
 
   async deleteWord(w: any) {
     if (!confirm(`Delete "${w.word}"?`)) return;
