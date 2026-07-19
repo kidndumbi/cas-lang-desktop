@@ -29,18 +29,21 @@ html, body {
   background: #f5f5f5;
 }
 
-html {
+// Apply font-size scaling only to the main content area (sidenav content),
+// not to modals/dialogs which are rendered in the overlay layer.
+mat-sidenav-content {
   font-size: 200%;
 }
 
-// body, .cdk-overlay-container, mat-dialog-container, .mat-mdc-dialog-surface {
-//   font-size: inherit;
-// }
-
 @media (min-width: 2400px) {
-  html {
+  mat-sidenav-content {
     font-size: 260%;
   }
+}
+
+// Reset modals/dialogs to default font size
+.cdk-overlay-container {
+  font-size: 100%;
 }
 
 // Override specific Material colors to better match cas-lang green
