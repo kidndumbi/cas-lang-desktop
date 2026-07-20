@@ -63,8 +63,13 @@ interface ConversationChallenge {
             <h2>Practice Complete!</h2>
           }
           <p style="color: #888;">
-            {{ exercises.length === 0 ? 'Use the Cassava Theater migration tool to import your data.' : 'Great job! You\'ve practiced all available exercises.' }}
+            {{ exercises.length === 0 ? "Use the Cassava Theater migration tool to import your data." : "Great job! You've practiced all available exercises." }}
           </p>
+          @if (exercises.length === 0) {
+            <button mat-raised-button color="primary" (click)="openCreateExerciseDialog()">
+              <mat-icon>add</mat-icon> Create Exercise
+            </button>
+          }
           @if (exercises.length > 0) {
             <button mat-raised-button color="primary" (click)="restartSession()">
               <mat-icon>replay</mat-icon> Practice Again
