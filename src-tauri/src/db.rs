@@ -13,16 +13,28 @@ impl AppDb {
         }
         // Stale lock from crashed/killed process — retry with escalating backoff
         eprintln!("DB open failed (stale lock). Waiting for OS to release...");
-        for attempt in 0..15 {
-            std::thread::sleep(std::time::Duration::from_millis(400 * (attempt + 1)));
+        for attempt in 0..30 {
+            std::thread::sleep(std::time::Duration::from_millis(200 * (attempt + 1)));
             if let Ok(db) = sled::open(&path) {
                 return Ok(Self { db });
             }
         }
-        // Last resort: delete the locked directory and start fresh
-        eprintln!("Still locked after retries. Deleting stale DB directory...");
-        let _ = std::fs::remove_dir_all(&path);
-        sled::open(path).map(|db| Self { db })
+        // Lock still held after ~90s — try removing just the lock file, not the data
+        eprintln!("Lock still held after retries. Removing lock file only...");
+        let lock_path = path.join("__sled_lock");
+        let _ = std::fs::remove_file(&lock_path);
+        // Also try removing the default db lock if it exists
+        let default_lock = path.join("default").join("__sled_lock");
+        let _ = std::fs::remove_file(&default_lock);
+        if let Ok(db) = sled::open(&path) {
+            return Ok(Self { db });
+        }
+        // Absolute last resort: keep retrying, but NEVER delete user data
+        eprintln!("CRITICAL: Cannot open DB. Restart the app or check disk.");
+        Err(sled::Error::Io(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            "Database locked and cannot be recovered. Please restart the application.",
+        )))
     }
 
     pub fn vocabulary(&self) -> Result<Tree, sled::Error> {
