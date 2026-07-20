@@ -15,6 +15,8 @@ import { LlmService } from '../services/llm.service';
 import { ExerciseService } from '../services/exercise.service';
 import { VocabularyService } from '../services/vocabulary.service';
 import { OllamaService } from '../services/ollama.service';
+import { MatDialog, MatDialogModule } from '@angular/material/dialog';
+import { VerbTaggingModalComponent } from './verb-tagging-modal.component';
 
 type Language = 'en' | 'es' | 'fr';
 type Length = 'low' | 'medium' | 'high';
@@ -70,7 +72,7 @@ const VOCAB_STOP_WORDS = new Set([
 @Component({
   selector: 'app-settings',
   standalone: true,
-  imports: [CommonModule, FormsModule, ReactiveFormsModule, MatCardModule, MatFormFieldModule, MatSelectModule, MatButtonModule, MatCheckboxModule, MatInputModule, MatIconModule, MatProgressSpinnerModule, MatProgressBarModule],
+  imports: [CommonModule, FormsModule, ReactiveFormsModule, MatCardModule, MatFormFieldModule, MatSelectModule, MatButtonModule, MatCheckboxModule, MatInputModule, MatIconModule, MatProgressSpinnerModule, MatProgressBarModule, MatDialogModule],
   template: `
     <div style="padding: 24px; max-width: 700px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px;">
       <!-- Languages -->
@@ -290,6 +292,79 @@ const VOCAB_STOP_WORDS = new Set([
           </div>
         </mat-card-content>
       </mat-card>
+
+      <!-- Verb Tagging -->
+      <mat-card>
+        <mat-card-header><mat-card-title>Verb Tagging</mat-card-title></mat-card-header>
+        <mat-card-content>
+          <p style="font-size: 0.85em; color: #888; margin-bottom: 12px;">
+            Scan all vocabulary words for the practice language, identify verbs, and tag them automatically. Conjugated forms will have their parent infinitive verb created and linked if missing.
+          </p>
+
+          <div style="display: flex; flex-direction: column; gap: 12px;">
+
+            <!-- Verb Tagging Model -->
+            <mat-form-field appearance="outline" style="width: 100%;">
+              <mat-label>Verb Tagging Model</mat-label>
+              <mat-select [(ngModel)]="verbTaggingModel" [disabled]="isVerbTaggingRunning">
+                <mat-option value="deepseek">DeepSeek (API)</mat-option>
+                @for (m of ollamaService.models(); track m.name) {
+                  <mat-option [value]="m.name">{{ m.name }} (Ollama)</mat-option>
+                }
+                @if (ollamaService.models().length === 0) {
+                  <mat-option value="" disabled>No Ollama models found — ensure Ollama is running</mat-option>
+                }
+              </mat-select>
+              @if (ollamaService.loadError()) {
+                <mat-hint style="color: #f44336;">{{ ollamaService.loadError() }}</mat-hint>
+              }
+            </mat-form-field>
+
+            <!-- Progress -->
+            @if (verbTaggingProgress) {
+              <div>
+                <div style="font-size: 0.85em; margin-bottom: 4px;">
+                  @if (isVerbTaggingRunning) {
+                    Processing: {{ verbTaggingProgress.current }} / {{ verbTaggingProgress.total }}
+                    @if (verbTaggingProgress.currentWord) {
+                      <br><small style="color: #666;">Current: {{ verbTaggingProgress.currentWord }}</small>
+                    }
+                  }
+                  @if (!isVerbTaggingRunning) {
+                    Done: {{ verbTaggingProgress.scanned }} scanned · {{ verbTaggingProgress.verbsFound }} verbs · {{ verbTaggingProgress.linked }} linked
+                  }
+                </div>
+                <mat-progress-bar
+                  mode="determinate"
+                  [value]="verbTaggingProgress.total > 0 ? (verbTaggingProgress.current / verbTaggingProgress.total) * 100 : 0"
+                  style="margin-bottom: 8px;">
+                </mat-progress-bar>
+              </div>
+            }
+
+            <!-- Buttons -->
+            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+              @if (!isVerbTaggingRunning) {
+                <button mat-raised-button color="primary" (click)="startVerbTagging()"
+                  [disabled]="verbTaggingModel === 'deepseek' && !llmService.deepseekApiKey()">
+                  <mat-icon>play_arrow</mat-icon> Start Verb Tagging
+                </button>
+              }
+              @if (isVerbTaggingRunning) {
+                <button mat-raised-button color="warn" (click)="stopVerbTagging()">
+                  <mat-icon>stop</mat-icon> Stop
+                </button>
+              }
+              @if (verbTaggingProgress) {
+                <button mat-stroked-button (click)="openVerbTaggingModal()">
+                  <mat-icon>visibility</mat-icon> View Progress
+                </button>
+              }
+            </div>
+
+          </div>
+        </mat-card-content>
+      </mat-card>
     </div>
   `,
 })
@@ -312,6 +387,16 @@ export class SettingsComponent implements OnInit {
   isBulkGenerating = false;
   bulkProgress: BulkProgress | null = null;
   private shouldStopBulk = false;
+
+  // Verb tagging state
+  verbTaggingModel = 'deepseek';
+  isVerbTaggingRunning = false;
+  verbTaggingProgress: { current: number; total: number; scanned: number; verbsFound: number; linked: number; currentWord?: string } | null = null;
+  private shouldStopVerbTagging = false;
+  private verbTaggingUpdatedWords: Array<{ word: string; translation: string; id: string }> = [];
+  private verbTaggingCreatedWords: Array<{ word: string; translation: string }> = [];
+
+  private dialog = inject(MatDialog);
 
   practiceTypeDefs = [
     { id: 'arrange-words', label: 'Arrange Words', desc: 'Unscramble all words into the correct order.' },
@@ -678,5 +763,189 @@ export class SettingsComponent implements OnInit {
 
     const text = await this.generateText(prompt);
     return this.parseWordTranslationJson(text, 'LLM batch');
+  }
+
+  // ─── Verb Tagging ─────────────────────────────────────────────
+
+  startVerbTagging(): void {
+    if (this.verbTaggingModel === 'deepseek' && !this.llmService.deepseekApiKey().trim()) {
+      alert('DeepSeek API key is not configured. Please save your API key first.');
+      return;
+    }
+    this.shouldStopVerbTagging = false;
+    this.isVerbTaggingRunning = true;
+    this.verbTaggingUpdatedWords = [];
+    this.verbTaggingCreatedWords = [];
+    this.verbTaggingProgress = { current: 0, total: 0, scanned: 0, verbsFound: 0, linked: 0 };
+    this.runVerbTagging();
+  }
+
+  stopVerbTagging(): void {
+    this.shouldStopVerbTagging = true;
+  }
+
+  openVerbTaggingModal(): void {
+    const status: 'idle' | 'running' | 'completed' | 'stopping' | 'error' =
+      this.isVerbTaggingRunning ? 'running' : (this.verbTaggingProgress ? 'completed' : 'idle');
+
+    this.dialog.open(VerbTaggingModalComponent, {
+      width: '700px',
+      maxHeight: '80vh',
+      data: {
+        progress: this.verbTaggingProgress ? {
+          status,
+          current: this.verbTaggingProgress.current,
+          total: this.verbTaggingProgress.total,
+          updatedWords: this.verbTaggingUpdatedWords,
+          createdWords: this.verbTaggingCreatedWords,
+        } : null,
+        onStop: () => this.stopVerbTagging(),
+      },
+    });
+  }
+
+  private async verbTaggingGenerate(prompt: string): Promise<string> {
+    if (this.verbTaggingModel === 'deepseek') {
+      return this.llmService.generateWithDeepseek(prompt);
+    }
+    return this.ollamaService.generate(prompt, this.verbTaggingModel);
+  }
+
+  private async runVerbTagging(): Promise<void> {
+    try {
+      // Get all vocabulary words (unfiltered by language to catch everything)
+      const allWords = await this.vocabularyService.getAll();
+      const words = allWords.filter((w: any) => {
+        const tags = w.tags || [];
+        return !tags.includes('verb') && !tags.includes('ignore');
+      });
+
+      this.verbTaggingProgress = {
+        current: 0,
+        total: words.length,
+        scanned: 0,
+        verbsFound: 0,
+        linked: 0,
+      };
+
+      const verbIds = new Map<string, string>(); // lowercase word -> id
+      const verbMap = new Map<string, string>(); // lowercase word -> id of parent infinitive
+
+      // First pass: collect existing verbs
+      for (const w of allWords) {
+        const tags = w.tags || [];
+        if (tags.includes('verb')) {
+          const wordLower = (w.word || '').toLowerCase();
+          verbIds.set(wordLower, w.id || w['id']);
+        }
+      }
+
+      for (const w of words) {
+        if (this.shouldStopVerbTagging) break;
+
+        const word = w.word || '';
+        const id = w.id || w['id'];
+        const translation = w.translation || '';
+        const practiceLanguage = w.practiceLanguage || w['practice_language'] || 'es';
+        const nativeLanguage = w.nativeLanguage || w['native_language'] || 'en';
+
+        this.verbTaggingProgress!.currentWord = word;
+        this.verbTaggingProgress!.current++;
+
+        try {
+          const langName = LANG_NAMES[practiceLanguage as Language] || practiceLanguage;
+          const prompt =
+            `Is "${word}" a verb or verb form in ${langName}? ` +
+            `If yes, respond with JSON: {"isVerb":true,"infinitive":"<infinitive form>"}. ` +
+            `If it's already the infinitive, set infinitive to the same word. ` +
+            `If not a verb, respond: {"isVerb":false}. ` +
+            `Return ONLY valid JSON, no markdown, no explanation.`;
+
+          const resp = await this.verbTaggingGenerate(prompt);
+          const jsonMatch = resp.trim().match(/\{[\s\S]*\}/);
+          if (!jsonMatch) {
+            this.verbTaggingProgress!.scanned++;
+            continue;
+          }
+
+          const parsed = JSON.parse(jsonMatch[0]);
+          if (!parsed.isVerb) {
+            this.verbTaggingProgress!.scanned++;
+            continue;
+          }
+
+          this.verbTaggingProgress!.verbsFound++;
+          const infinitive: string = (parsed.infinitive || word).toLowerCase().trim();
+          const isAlreadyInfinitive = infinitive === word.toLowerCase();
+
+          if (isAlreadyInfinitive) {
+            // This word is the infinitive itself — just tag it as verb
+            const currentTags = [...(w.tags || [])];
+            if (!currentTags.includes('verb')) currentTags.push('verb');
+            try {
+              await this.vocabularyService.update(id, { ...w, tags: currentTags });
+              verbIds.set(word.toLowerCase(), id);
+              // Track updated word
+              this.verbTaggingUpdatedWords.push({ word: word, translation: translation, id });
+            } catch { /* skip */ }
+          } else {
+            // This is a conjugated form — link to parent infinitive
+            let parentId = verbIds.get(infinitive);
+
+            if (!parentId) {
+              // Parent infinitive doesn't exist yet — create it
+              const translationPrompt =
+                `Translate the ${langName} infinitive verb "${infinitive}" to ${LANG_NAMES[nativeLanguage as Language] || nativeLanguage}. ` +
+                `Return ONLY the translated word, nothing else.`;
+              let infinitiveTranslation = '';
+              try {
+                infinitiveTranslation = await this.verbTaggingGenerate(translationPrompt);
+              } catch {
+                infinitiveTranslation = translation;
+              }
+
+              try {
+                const newVerb = await this.vocabularyService.create({
+                  word: infinitive,
+                  translation: infinitiveTranslation || translation,
+                  practiceLanguage,
+                  nativeLanguage,
+                  tags: ['verb', 'auto-generated'],
+                });
+                parentId = newVerb.id || newVerb['id'];
+                verbIds.set(infinitive, parentId!);
+                this.verbTaggingCreatedWords.push({ word: infinitive, translation: infinitiveTranslation || translation });
+                this.verbTaggingProgress!.linked++;
+              } catch {
+                this.verbTaggingProgress!.scanned++;
+                continue;
+              }
+            }
+
+            // Link the conjugated word to its parent
+            const currentTags = [...(w.tags || [])];
+            if (!currentTags.includes('verb')) currentTags.push('verb');
+            try {
+              await this.vocabularyService.update(id, {
+                ...w,
+                tags: currentTags,
+                parentVerbId: parentId,
+              });
+              // Track updated conjugated word
+              this.verbTaggingUpdatedWords.push({ word: word, translation: translation, id });
+              this.verbTaggingProgress!.linked++;
+            } catch { /* skip */ }
+          }
+
+          this.verbTaggingProgress!.scanned++;
+        } catch {
+          this.verbTaggingProgress!.scanned++;
+        }
+      }
+    } catch {
+      // Overall error — just stop
+    } finally {
+      this.isVerbTaggingRunning = false;
+    }
   }
 }
