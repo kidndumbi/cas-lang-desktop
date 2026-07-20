@@ -291,7 +291,7 @@ export class VocabularyEditWordModalComponent {
     return this.infinitiveFilteredWords().slice(start, start + INFINITIVE_PAGE_SIZE);
   });
 
-  isVerb = computed(() => this.word()?.tags?.includes('verb') ?? false);
+  isVerb = computed(() => this.word()?.tags?.includes('infinitive') ?? false);
 
   private translationService = inject(TranslationService);
   private snackBar = inject(MatSnackBar);
