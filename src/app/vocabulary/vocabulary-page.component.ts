@@ -117,6 +117,7 @@ type VocabExerciseType = 'multiple-choice' | 'spell-word' | 'type-word';
         [totalWords]="filteredWords.length"
         [totalPages]="wordListTotalPages()"
         [currentPage]="wordListCurrentPage()"
+        [pageSize]="wordListPageSize"
         [uniqueTags]="uniqueWordTags()"
         [selectedTags]="selectedWordTags()"
         (filterTextChange)="filterText = $event"
@@ -131,6 +132,8 @@ type VocabExerciseType = 'multiple-choice' | 'spell-word' | 'type-word';
         (goToNextPage)="wordListGoToNextPage()"
         (goToPreviousPage)="wordListGoToPrevPage()"
         (goToFirstPage)="wordListCurrentPage.set(1)"
+        (massDelete)="massDeleteWords($event)"
+        (pageSizeChange)="setPageSize($event)"
         (goToLastPage)="wordListCurrentPage.set(wordListTotalPages())">
       </app-vocabulary-word-list-modal>
     }
@@ -193,7 +196,7 @@ export class VocabularyPageComponent implements OnInit {
     this.applyFilter();
     this.wordListCurrentPage.set(1);
   }
-  private wordListPageSize = 20;
+  wordListPageSize = 20;
   paginatedFilteredWords: any[] = [];
 
   wordListTotalPages() { return Math.max(1, Math.ceil(this.filteredWords.length / this.wordListPageSize)); }
@@ -391,5 +394,27 @@ export class VocabularyPageComponent implements OnInit {
     if (!confirm(`Delete "${w.word}"?`)) return;
     try { await this.vocab.delete(w.id); await this.load(); this.snackBar.open('Deleted', 'OK', { duration: 2000 }); if (this.currentWord?.id === w.id) this.pickNextWord(); }
     catch { this.snackBar.open('Failed to delete', 'OK', { duration: 3000 }); }
+  }
+
+  setPageSize(n: number): void {
+    this.wordListPageSize = n;
+    this.applyFilter();
+  }
+
+  async massDeleteWords(ids: string[]) {
+    if (!ids.length) return;
+    let deleted = 0;
+    let failed = 0;
+    for (const id of ids) {
+      try {
+        await this.vocab.delete(id);
+        deleted++;
+      } catch { failed++; }
+    }
+    await this.load();
+    if (!this.currentWord || ids.includes(this.currentWord.id || this.currentWord['id'])) {
+      this.pickNextWord();
+    }
+    this.snackBar.open(`${deleted} deleted${failed > 0 ? `, ${failed} failed` : ''}`, 'OK', { duration: 3000 });
   }
 }

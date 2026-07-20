@@ -817,7 +817,7 @@ export class SettingsComponent implements OnInit {
       const allWords = await this.vocabularyService.getAll();
       const words = allWords.filter((w: any) => {
         const tags = w.tags || [];
-        return !tags.includes('verb') && !tags.includes('ignore');
+        return !tags.includes('infinitive') && !tags.includes('inflected') && !tags.includes('not verb');
       });
 
       this.verbTaggingProgress = {
@@ -831,10 +831,10 @@ export class SettingsComponent implements OnInit {
       const verbIds = new Map<string, string>(); // lowercase word -> id
       const verbMap = new Map<string, string>(); // lowercase word -> id of parent infinitive
 
-      // First pass: collect existing verbs
+      // First pass: collect existing infinitives
       for (const w of allWords) {
         const tags = w.tags || [];
-        if (tags.includes('verb')) {
+        if (tags.includes('infinitive')) {
           const wordLower = (w.word || '').toLowerCase();
           verbIds.set(wordLower, w.id || w['id']);
         }
@@ -870,6 +870,12 @@ export class SettingsComponent implements OnInit {
 
           const parsed = JSON.parse(jsonMatch[0]);
           if (!parsed.isVerb) {
+            // Tag as not-a-verb so it won't be re-scanned in future runs
+            const currentTags = [...(w.tags || [])];
+            if (!currentTags.includes('not verb')) currentTags.push('not verb');
+            try {
+              await this.vocabularyService.update(id, { ...w, tags: currentTags });
+            } catch { /* skip */ }
             this.verbTaggingProgress!.scanned++;
             continue;
           }
@@ -879,9 +885,9 @@ export class SettingsComponent implements OnInit {
           const isAlreadyInfinitive = infinitive === word.toLowerCase();
 
           if (isAlreadyInfinitive) {
-            // This word is the infinitive itself — just tag it as verb
+            // This word is the infinitive itself — tag it as infinitive
             const currentTags = [...(w.tags || [])];
-            if (!currentTags.includes('verb')) currentTags.push('verb');
+            if (!currentTags.includes('infinitive')) currentTags.push('infinitive');
             try {
               await this.vocabularyService.update(id, { ...w, tags: currentTags });
               verbIds.set(word.toLowerCase(), id);
@@ -910,7 +916,7 @@ export class SettingsComponent implements OnInit {
                   translation: infinitiveTranslation || translation,
                   practiceLanguage,
                   nativeLanguage,
-                  tags: ['verb', 'auto-generated'],
+                  tags: ['infinitive', 'auto-generated'],
                 });
                 parentId = newVerb.id || newVerb['id'];
                 verbIds.set(infinitive, parentId!);
@@ -924,7 +930,7 @@ export class SettingsComponent implements OnInit {
 
             // Link the conjugated word to its parent
             const currentTags = [...(w.tags || [])];
-            if (!currentTags.includes('verb')) currentTags.push('verb');
+            if (!currentTags.includes('inflected')) currentTags.push('inflected');
             try {
               await this.vocabularyService.update(id, {
                 ...w,
