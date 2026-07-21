@@ -31,15 +31,24 @@ html, body {
 
 // Scale the entire app UI (sidebar menu, main content, toolbar) using CSS zoom
 // so that both px-based and rem-based Material components scale uniformly.
-// Modals/dialogs in .cdk-overlay-container (a sibling of the app, not a child)
-// are NOT affected because they live outside this container.
 mat-sidenav-container {
   zoom: 130%;
+}
+
+// Modals rendered inside the app container get scaled up; undo the zoom so they
+// display at their intended size.
+mat-sidenav-container [style*="position: fixed"][style*="z-index: 1000"],
+mat-sidenav-container [style*="position: fixed"][style*="z-index: 1001"] {
+  zoom: calc(1 / 1.3);
 }
 
 @media (min-width: 2400px) {
   mat-sidenav-container {
     zoom: 200%;
+  }
+  mat-sidenav-container [style*="position: fixed"][style*="z-index: 1000"],
+  mat-sidenav-container [style*="position: fixed"][style*="z-index: 1001"] {
+    zoom: calc(1 / 2);
   }
 }
 
