@@ -17,6 +17,8 @@ import { VocabularyService } from '../services/vocabulary.service';
 import { OllamaService } from '../services/ollama.service';
 import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 import { VerbTaggingModalComponent } from './verb-tagging-modal.component';
+import { PortConfirmModalComponent } from './port-confirm-modal.component';
+import { invoke } from '@tauri-apps/api/core';
 
 type Language = 'en' | 'es' | 'fr';
 type Length = 'low' | 'medium' | 'high';
@@ -365,6 +367,29 @@ const VOCAB_STOP_WORDS = new Set([
           </div>
         </mat-card-content>
       </mat-card>
+
+      <!-- API Port -->
+      <mat-card>
+        <mat-card-header><mat-card-title>API Port</mat-card-title></mat-card-header>
+        <mat-card-content>
+          <p style="font-size: 0.85em; color: #888; margin-bottom: 12px;">
+            The port the built-in API server listens on. Changing this requires an app restart. Default: 3030.
+          </p>
+          <div style="font-size: 0.85em; color: #666; margin-bottom: 4px;">
+            Current server: <strong>http://0.0.0.0:{{ currentPort }}</strong>
+          </div>
+          <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+            <mat-form-field appearance="outline" style="width: 150px;">
+              <mat-label>Port</mat-label>
+              <input matInput type="number" [(ngModel)]="portDraft" min="1024" max="65535" [disabled]="isSavingPort">
+            </mat-form-field>
+            <button mat-raised-button color="primary" (click)="savePort()" [disabled]="isSavingPort || portDraft === currentPort">
+              @if (isSavingPort) { <mat-spinner diameter="20" style="display: inline-block; margin-right: 8px;"></mat-spinner> }
+              Save
+            </button>
+          </div>
+        </mat-card-content>
+      </mat-card>
     </div>
   `,
 })
@@ -396,6 +421,13 @@ export class SettingsComponent implements OnInit {
   private verbTaggingUpdatedWords: Array<{ word: string; translation: string; id: string }> = [];
   private verbTaggingCreatedWords: Array<{ word: string; translation: string }> = [];
 
+  // API Port state
+  portDraft = 3030;
+  currentPort = 3030;
+  isSavingPort = false;
+  portMessage = '';
+  portError = false;
+
   private dialog = inject(MatDialog);
 
   practiceTypeDefs = [
@@ -423,8 +455,9 @@ export class SettingsComponent implements OnInit {
     this.bulkPracticeLanguage = settings.practiceLanguage;
   }
 
-  ngOnInit() {
+  async ngOnInit() {
     this.ollamaService.fetchModels();
+    await this.loadPort();
   }
 
   onApiKeyChange(event: Event): void {
@@ -489,6 +522,45 @@ export class SettingsComponent implements OnInit {
 
   stopBulkGeneration(): void {
     this.shouldStopBulk = true;
+  }
+
+  // ─── API Port ─────────────────────────────────────────────────
+
+  async loadPort(): Promise<void> {
+    try {
+      const port = await invoke<number>('get_api_port');
+      this.currentPort = port;
+      this.portDraft = port;
+    } catch { /* use defaults */ }
+  }
+
+  async savePort(): Promise<void> {
+    if (this.portDraft === this.currentPort) return;
+    this.isSavingPort = true;
+    try {
+      const msg = await invoke<string>('save_api_port', { newPort: this.portDraft });
+      this.currentPort = this.portDraft;
+      this.openPortConfirmModal(true, msg);
+    } catch (err) {
+      const errMsg = typeof err === 'string' ? err : (err instanceof Error ? err.message : 'Failed to save port');
+      this.openPortConfirmModal(false, errMsg);
+    } finally {
+      this.isSavingPort = false;
+    }
+  }
+
+  openPortConfirmModal(success: boolean, message: string): void {
+    this.dialog.open(PortConfirmModalComponent, {
+      width: '450px',
+      data: {
+        port: this.portDraft,
+        success,
+        message,
+        onRestart: () => {
+          invoke('restart_app').catch(() => {});
+        },
+      },
+    });
   }
 
   // ─── LLM helpers ──────────────────────────────────────────────

@@ -7,16 +7,108 @@ mod routes;
 use commands::DbState;
 use db::AppDb;
 use std::path::PathBuf;
+use std::sync::Mutex;
 use tauri::{
     menu::{MenuBuilder, MenuItemBuilder},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Manager,
+    Manager, State,
 };
 use warp::Filter;
+
+const DEFAULT_API_PORT: u16 = 3030;
+
+pub struct PortState {
+    pub port: Mutex<u16>,
+    pub port_file: PathBuf,
+}
 
 #[tauri::command]
 fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
+}
+
+#[tauri::command]
+fn get_api_port(port_state: State<PortState>) -> u16 {
+    *port_state.port.lock().unwrap()
+}
+
+#[tauri::command]
+fn save_api_port(new_port: u16, port_state: State<PortState>) -> Result<String, String> {
+    // Validate range
+    if new_port < 1024 || new_port > 65535 {
+        return Err("Port must be between 1024 and 65535".to_string());
+    }
+
+    // Check if port is available
+    let listener =
+        std::net::TcpListener::bind(("0.0.0.0", new_port))
+            .map_err(|_| format!("Port {} is already in use or unavailable.", new_port))?;
+    drop(listener); // Release immediately
+
+    // Save to file
+    std::fs::write(&port_state.port_file, new_port.to_string())
+        .map_err(|e| format!("Failed to save port: {}", e))?;
+
+    // Update in-memory state
+    *port_state.port.lock().unwrap() = new_port;
+
+    Ok(format!("Port {} saved. An app restart is required for the change to take effect.", new_port))
+}
+
+#[tauri::command]
+fn restart_app(app: tauri::AppHandle) -> Result<(), String> {
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    std::process::Command::new(&exe).spawn().map_err(|e| e.to_string())?;
+    app.exit(0);
+    Ok(())
+}
+
+#[tauri::command]
+async fn fetch_ollama_models() -> Result<Vec<serde_json::Value>, String> {
+    let client = reqwest::Client::new();
+    let resp = client
+        .get("http://localhost:11434/api/tags")
+        .send()
+        .await
+        .map_err(|e| format!("Ollama not reachable: {}", e))?;
+    let data: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+    let models = data["models"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    Ok(models)
+}
+
+#[tauri::command]
+async fn generate_ollama(prompt: String, model: String) -> Result<String, String> {
+    let client = reqwest::Client::new();
+    let resp = client
+        .post("http://localhost:11434/api/generate")
+        .json(&serde_json::json!({
+            "model": model,
+            "prompt": prompt,
+            "stream": false,
+        }))
+        .send()
+        .await
+        .map_err(|e| format!("Ollama error: {}", e))?;
+    let data: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+    let text = data["response"].as_str().unwrap_or("").trim().to_string();
+    Ok(text)
+}
+
+#[tauri::command]
+async fn ping_ollama() -> Result<bool, String> {
+    let client = reqwest::Client::new();
+    match client
+        .get("http://localhost:11434/api/tags")
+        .timeout(std::time::Duration::from_secs(3))
+        .send()
+        .await
+    {
+        Ok(resp) => Ok(resp.status().is_success()),
+        Err(_) => Ok(false),
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -27,6 +119,14 @@ pub fn run() {
         .join("cas-lang-desktop");
     std::fs::create_dir_all(&data_dir).ok();
     let db_path = data_dir.join("cas_lang_data");
+    let port_file = data_dir.join("api_port.txt");
+
+    // Read port from config file, default to 3030
+    let port = std::fs::read_to_string(&port_file)
+        .ok()
+        .and_then(|s| s.trim().parse::<u16>().ok())
+        .unwrap_or(DEFAULT_API_PORT);
+
     println!("DB path: {:?}", db_path);
 
     let db = AppDb::open(db_path).expect("DB open failed");
@@ -64,13 +164,19 @@ pub fn run() {
         .with(cors);
 
     tauri::async_runtime::spawn(async move {
-        println!("Warp API → 0.0.0.0:3030");
-        warp::serve(api_routes).run(([0, 0, 0, 0], 3030)).await;
+        println!("Warp API → 0.0.0.0:{}", port);
+        warp::serve(api_routes).run(([0, 0, 0, 0], port)).await;
     });
+
+    let port_state = PortState {
+        port: Mutex::new(port),
+        port_file,
+    };
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .manage(DbState(db_for_state))
+        .manage(port_state)
         .setup(|app| {
             let show_item = MenuItemBuilder::with_id("show", "Show").build(app)?;
             let quit_item = MenuItemBuilder::with_id("quit", "Quit").build(app)?;
@@ -121,6 +227,12 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             greet,
+            get_api_port,
+            save_api_port,
+            restart_app,
+            fetch_ollama_models,
+            generate_ollama,
+            ping_ollama,
             commands::get_vocabulary,
             commands::create_vocabulary,
             commands::update_vocabulary,
