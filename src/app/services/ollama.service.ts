@@ -1,4 +1,5 @@
 import { Injectable, signal } from '@angular/core';
+import { invoke } from '@tauri-apps/api/core';
 
 export interface OllamaModel {
   name: string;
@@ -13,21 +14,16 @@ export class OllamaService {
   isLoadingModels = signal(false);
   loadError = signal('');
 
-  private readonly BASE_URL = 'http://localhost:11434';
-
-  /** Fetch available models from Ollama */
+  /** Fetch available models from Ollama via Tauri backend */
   async fetchModels(): Promise<OllamaModel[]> {
     this.isLoadingModels.set(true);
     this.loadError.set('');
     try {
-      const resp = await fetch(`${this.BASE_URL}/api/tags`);
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      const data = await resp.json();
-      const models = data.models || [];
+      const models = await invoke<OllamaModel[]>('fetch_ollama_models');
       this.models.set(models);
       return models;
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Connection failed';
+      const msg = typeof err === 'string' ? err : (err instanceof Error ? err.message : 'Connection failed');
       this.loadError.set(`Ollama not reachable: ${msg}`);
       this.models.set([]);
       return [];
@@ -36,27 +32,16 @@ export class OllamaService {
     }
   }
 
-  /** Generate text via Ollama */
+  /** Generate text via Ollama via Tauri backend */
   async generate(prompt: string, model: string): Promise<string> {
-    const resp = await fetch(`${this.BASE_URL}/api/generate`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model,
-        prompt,
-        stream: false,
-      }),
-    });
-    if (!resp.ok) throw new Error(`Ollama HTTP ${resp.status}`);
-    const data = await resp.json();
-    return data.response?.trim() ?? '';
+    const text = await invoke<string>('generate_ollama', { prompt, model });
+    return text;
   }
 
-  /** Quick check if Ollama server is reachable */
+  /** Quick check if Ollama server is reachable via Tauri backend */
   async ping(): Promise<boolean> {
     try {
-      const resp = await fetch(`${this.BASE_URL}/api/tags`, { signal: AbortSignal.timeout(3000) });
-      return resp.ok;
+      return await invoke<boolean>('ping_ollama');
     } catch {
       return false;
     }

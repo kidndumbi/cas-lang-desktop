@@ -63,6 +63,54 @@ fn restart_app(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+async fn fetch_ollama_models() -> Result<Vec<serde_json::Value>, String> {
+    let client = reqwest::Client::new();
+    let resp = client
+        .get("http://localhost:11434/api/tags")
+        .send()
+        .await
+        .map_err(|e| format!("Ollama not reachable: {}", e))?;
+    let data: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+    let models = data["models"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    Ok(models)
+}
+
+#[tauri::command]
+async fn generate_ollama(prompt: String, model: String) -> Result<String, String> {
+    let client = reqwest::Client::new();
+    let resp = client
+        .post("http://localhost:11434/api/generate")
+        .json(&serde_json::json!({
+            "model": model,
+            "prompt": prompt,
+            "stream": false,
+        }))
+        .send()
+        .await
+        .map_err(|e| format!("Ollama error: {}", e))?;
+    let data: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+    let text = data["response"].as_str().unwrap_or("").trim().to_string();
+    Ok(text)
+}
+
+#[tauri::command]
+async fn ping_ollama() -> Result<bool, String> {
+    let client = reqwest::Client::new();
+    match client
+        .get("http://localhost:11434/api/tags")
+        .timeout(std::time::Duration::from_secs(3))
+        .send()
+        .await
+    {
+        Ok(resp) => Ok(resp.status().is_success()),
+        Err(_) => Ok(false),
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let data_dir = std::env::var("APPDATA")
@@ -182,6 +230,9 @@ pub fn run() {
             get_api_port,
             save_api_port,
             restart_app,
+            fetch_ollama_models,
+            generate_ollama,
+            ping_ollama,
             commands::get_vocabulary,
             commands::create_vocabulary,
             commands::update_vocabulary,
