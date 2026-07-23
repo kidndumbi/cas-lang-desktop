@@ -9,6 +9,8 @@ import { MatInputModule } from '@angular/material/input';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
+import { MatTableModule } from '@angular/material/table';
+import { SelectionModel } from '@angular/cdk/collections';
 import { CommonModule } from '@angular/common';
 import { SettingsService, AppSettings } from '../services/settings.service';
 import { LlmService } from '../services/llm.service';
@@ -18,6 +20,7 @@ import { OllamaService } from '../services/ollama.service';
 import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 import { VerbTaggingModalComponent } from './verb-tagging-modal.component';
 import { PortConfirmModalComponent } from './port-confirm-modal.component';
+import { VerbTensesData, VerbTenseData, TenseEntry } from '../models/tenses-data.model';
 import { invoke } from '@tauri-apps/api/core';
 
 type Language = 'en' | 'es' | 'fr';
@@ -42,6 +45,23 @@ interface BulkProgress {
   saved: number;
   skipped: number;
   errors: number;
+}
+
+interface TensesProgress {
+  current: number;
+  total: number;
+  saved: number;
+  errors: number;
+  currentWord?: string;
+}
+
+interface InfinitiveVocab {
+  word: string;
+  translation: string;
+  practiceLanguage: string;
+  nativeLanguage: string;
+  id: string;
+  hasTenses?: boolean;
 }
 
 const VOCAB_CATEGORIES = [
@@ -74,7 +94,7 @@ const VOCAB_STOP_WORDS = new Set([
 @Component({
   selector: 'app-settings',
   standalone: true,
-  imports: [CommonModule, FormsModule, ReactiveFormsModule, MatCardModule, MatFormFieldModule, MatSelectModule, MatButtonModule, MatCheckboxModule, MatInputModule, MatIconModule, MatProgressSpinnerModule, MatProgressBarModule, MatDialogModule],
+  imports: [CommonModule, FormsModule, ReactiveFormsModule, MatCardModule, MatFormFieldModule, MatSelectModule, MatButtonModule, MatCheckboxModule, MatInputModule, MatIconModule, MatProgressSpinnerModule, MatProgressBarModule, MatTableModule, MatDialogModule],
   template: `
     <div style="padding: 24px; max-width: 700px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px;">
       <!-- Languages -->
@@ -368,6 +388,156 @@ const VOCAB_STOP_WORDS = new Set([
         </mat-card-content>
       </mat-card>
 
+      <!-- Tenses Generation -->
+      <mat-card>
+        <mat-card-header><mat-card-title>Verb Tenses Generation</mat-card-title></mat-card-header>
+        <mat-card-content>
+          <p style="font-size: 0.85em; color: #888; margin-bottom: 12px;">
+            Generate complete verb conjugation tables (all tenses and moods) for infinitive-tagged vocabulary words using AI.
+            Words with the "infinitive" tag are listed below. Select words and generate tenses one at a time. Words that already have tenses are shown dimmed but still remain in the list.
+          </p>
+
+          <div style="display: flex; flex-direction: column; gap: 12px;">
+
+            <!-- Tenses Generation Model -->
+            <mat-form-field appearance="outline" style="width: 100%;">
+              <mat-label>Generation Model</mat-label>
+              <mat-select [(ngModel)]="tensesGenerationModel" [disabled]="isTensesGenerating">
+                <mat-option value="deepseek">DeepSeek (API)</mat-option>
+                @for (m of ollamaService.models(); track m.name) {
+                  <mat-option [value]="m.name">{{ m.name }} (Ollama)</mat-option>
+                }
+                @if (ollamaService.models().length === 0) {
+                  <mat-option value="" disabled>No Ollama models found — ensure Ollama is running</mat-option>
+                }
+              </mat-select>
+              @if (ollamaService.loadError()) {
+                <mat-hint style="color: #f44336;">{{ ollamaService.loadError() }}</mat-hint>
+              }
+            </mat-form-field>
+
+            <!-- Load Infinitive Words Button & Search -->
+            <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+              <button mat-stroked-button (click)="loadInfinitiveWords()" [disabled]="isTensesGenerating">
+                <mat-icon>refresh</mat-icon> Load Infinitive Words
+              </button>
+              <mat-form-field appearance="outline" style="flex: 1; min-width: 200px;">
+                <mat-label>Search</mat-label>
+                <input matInput [(ngModel)]="tensesSearchFilter" [disabled]="isTensesGenerating" placeholder="Filter by word or translation...">
+                <mat-icon matSuffix>search</mat-icon>
+              </mat-form-field>
+              <span style="font-size: 0.85em; color: #666; white-space: nowrap;">
+                @if (filteredTensesWords.length > 0 || tensesSearchFilter) {
+                  {{ tensesSearchFilter ? filteredTensesWords.length + ' / ' : '' }}{{ infinitiveWords.length }} infinitive verbs found
+                }
+                @else if (infinitiveWords.length > 0) {
+                  {{ infinitiveWords.length }} infinitive verbs found
+                }
+                @if (tensesSelection.selected.length > 0) {
+                  — {{ tensesSelection.selected.length }} selected
+                }
+              </span>
+            </div>
+
+            <!-- Words Table -->
+            @if (filteredTensesWords.length > 0) {
+              <div style="max-height: 300px; overflow-y: auto; border: 1px solid #e0e0e0; border-radius: 4px;">
+                <table style="width: 100%; border-collapse: collapse; font-size: 0.85em;">
+                  <thead>
+                    <tr style="background: #f5f5f5; position: sticky; top: 0; z-index: 1;">
+                      <th style="padding: 8px 12px; text-align: left; width: 48px;">
+                        <mat-checkbox
+                          [checked]="isAllFilteredTensesSelected()"
+                          [indeterminate]="isFilteredTensesIndeterminate()"
+                          (change)="toggleAllFilteredTensesSelection($event.checked)"
+                          [disabled]="isTensesGenerating">
+                        </mat-checkbox>
+                      </th>
+                      <th style="padding: 8px 12px; text-align: left;">Word</th>
+                      <th style="padding: 8px 12px; text-align: left;">Translation</th>
+                      <th style="padding: 8px 12px; text-align: left;">Language</th>
+                      <th style="padding: 8px 12px; text-align: center;">Has Tenses</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (item of filteredTensesWords; track item.id) {
+                      <tr style="border-bottom: 1px solid #e0e0e0;"
+                        [style.background]="tensesSelection.isSelected(item.id) ? '#e3f2fd' : ''"
+                        [style.opacity]="item.hasTenses ? '0.5' : '1'">
+                        <td style="padding: 4px 12px;">
+                          <mat-checkbox
+                            [checked]="tensesSelection.isSelected(item.id)"
+                            (change)="tensesSelection.toggle(item.id)"
+                            [disabled]="isTensesGenerating">
+                          </mat-checkbox>
+                        </td>
+                        <td style="padding: 6px 12px; font-weight: 500;">{{ item.word }}</td>
+                        <td style="padding: 6px 12px; color: #555;">{{ item.translation }}</td>
+                        <td style="padding: 6px 12px; color: #888; font-size: 0.8em;">{{ item.practiceLanguage }}</td>
+                        <td style="padding: 6px 12px; text-align: center;">
+                          @if (item.hasTenses) {
+                            <mat-icon style="font-size: 18px; color: #4caf50;">check_circle</mat-icon>
+                          }
+                          @else {
+                            <mat-icon style="font-size: 18px; color: #bdbdbd;">radio_button_unchecked</mat-icon>
+                          }
+                        </td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            } @else if (infinitiveWords.length > 0 && tensesSearchFilter) {
+              <div style="padding: 16px; text-align: center; color: #888; font-size: 0.85em;">
+                No words match your search.
+              </div>
+            }
+
+            <!-- Progress -->
+            @if (tensesProgress) {
+              <div>
+                <div style="font-size: 0.85em; margin-bottom: 4px;">
+                  @if (isTensesGenerating) {
+                    Generating tenses {{ tensesProgress.current }} / {{ tensesProgress.total }}...
+                    @if (tensesProgress.currentWord) {
+                      <br><small style="color: #666;">Current: {{ tensesProgress.currentWord }}</small>
+                    }
+                  }
+                  @if (!isTensesGenerating) {
+                    Done: {{ tensesProgress.saved }} saved · {{ tensesProgress.errors }} errors
+                  }
+                </div>
+                <mat-progress-bar
+                  mode="determinate"
+                  [value]="tensesProgress.total > 0 ? (tensesProgress.current / tensesProgress.total) * 100 : 0"
+                  style="margin-bottom: 8px;">
+                </mat-progress-bar>
+              </div>
+            }
+
+            <!-- Buttons -->
+            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+              @if (!isTensesGenerating) {
+                <button mat-raised-button color="primary" (click)="startTensesGeneration()"
+                  [disabled]="tensesSelection.selected.length === 0 || (tensesGenerationModel === 'deepseek' && !llmService.deepseekApiKey())">
+                  <mat-icon>play_arrow</mat-icon>
+                  Generate Tenses ({{ tensesSelection.selected.length }} selected)
+                </button>
+              }
+              @if (isTensesGenerating) {
+                <button mat-raised-button color="warn" (click)="stopTensesGeneration()">
+                  <mat-icon>stop</mat-icon> Stop
+                </button>
+              }
+            </div>
+            @if (tensesGenerationModel === 'deepseek' && !llmService.deepseekApiKey()) {
+              <div style="font-size: 0.8em; color: #f44336;">Requires a DeepSeek API key to be configured in Settings.</div>
+            }
+
+          </div>
+        </mat-card-content>
+      </mat-card>
+
       <!-- API Port -->
       <mat-card>
         <mat-card-header><mat-card-title>API Port</mat-card-title></mat-card-header>
@@ -421,6 +591,15 @@ export class SettingsComponent implements OnInit {
   private verbTaggingUpdatedWords: Array<{ word: string; translation: string; id: string }> = [];
   private verbTaggingCreatedWords: Array<{ word: string; translation: string }> = [];
 
+  // Tenses generation state
+  tensesGenerationModel = 'deepseek';
+  isTensesGenerating = false;
+  tensesProgress: TensesProgress | null = null;
+  private shouldStopTenses = false;
+  infinitiveWords: InfinitiveVocab[] = [];
+  tensesSearchFilter = '';
+  tensesSelection = new SelectionModel<string>(true, []);
+
   // API Port state
   portDraft = 3030;
   currentPort = 3030;
@@ -458,6 +637,7 @@ export class SettingsComponent implements OnInit {
   async ngOnInit() {
     this.ollamaService.fetchModels();
     await this.loadPort();
+    this.loadInfinitiveWords();
   }
 
   onApiKeyChange(event: Event): void {
@@ -572,6 +752,13 @@ export class SettingsComponent implements OnInit {
     return this.ollamaService.generate(prompt, this.bulkGenerationModel);
   }
 
+  private async tensesGenerate(prompt: string): Promise<string> {
+    if (this.tensesGenerationModel === 'deepseek') {
+      return this.llmService.generateWithDeepseek(prompt);
+    }
+    return this.ollamaService.generate(prompt, this.tensesGenerationModel);
+  }
+
   private async translatePhrase(text: string, source: Language, target: Language): Promise<string> {
     const sourceName = LANG_NAMES[source];
     const targetName = LANG_NAMES[target];
@@ -676,7 +863,6 @@ export class SettingsComponent implements OnInit {
     const practiceLangName = LANG_NAMES[practiceLang];
     const nativeLangName = LANG_NAMES[nativeLang];
 
-    // Load existing words for dedup
     const existingWords: string[] = [];
     try {
       const vocab = await this.vocabularyService.getAll(practiceLang, nativeLang);
@@ -686,7 +872,6 @@ export class SettingsComponent implements OnInit {
       }
     } catch { /* proceed */ }
 
-    // Extract candidate words from existing exercises
     let exerciseCandidates: string[] = [];
     try {
       const exercises = await this.exerciseService.getAll(undefined, undefined);
@@ -727,7 +912,6 @@ export class SettingsComponent implements OnInit {
     };
 
     try {
-      // Phase 1: Extract from existing exercises
       while (this.bulkProgress!.saved < count && !this.shouldStopBulk && consecutiveErrors < MAX_CONSECUTIVE_ERRORS && candidateIndex < exerciseCandidates.length) {
         const batchWords = exerciseCandidates.slice(candidateIndex, candidateIndex + BATCH_SIZE);
         candidateIndex += BATCH_SIZE;
@@ -744,7 +928,6 @@ export class SettingsComponent implements OnInit {
         await saveBatch(batch);
       }
 
-      // Phase 2: Generate by category via LLM
       consecutiveErrors = 0;
       let categoryIndex = Math.floor(Math.random() * VOCAB_CATEGORIES.length);
       while (this.bulkProgress!.saved < count && !this.shouldStopBulk && consecutiveErrors < MAX_CONSECUTIVE_ERRORS) {
@@ -885,7 +1068,6 @@ export class SettingsComponent implements OnInit {
 
   private async runVerbTagging(): Promise<void> {
     try {
-      // Get all vocabulary words (unfiltered by language to catch everything)
       const allWords = await this.vocabularyService.getAll();
       const words = allWords.filter((w: any) => {
         const tags = w.tags || [];
@@ -900,10 +1082,8 @@ export class SettingsComponent implements OnInit {
         linked: 0,
       };
 
-      const verbIds = new Map<string, string>(); // lowercase word -> id
-      const verbMap = new Map<string, string>(); // lowercase word -> id of parent infinitive
+      const verbIds = new Map<string, string>();
 
-      // First pass: collect existing infinitives
       for (const w of allWords) {
         const tags = w.tags || [];
         if (tags.includes('infinitive')) {
@@ -942,7 +1122,6 @@ export class SettingsComponent implements OnInit {
 
           const parsed = JSON.parse(jsonMatch[0]);
           if (!parsed.isVerb) {
-            // Tag as not-a-verb so it won't be re-scanned in future runs
             const currentTags = [...(w.tags || [])];
             if (!currentTags.includes('not verb')) currentTags.push('not verb');
             try {
@@ -957,21 +1136,17 @@ export class SettingsComponent implements OnInit {
           const isAlreadyInfinitive = infinitive === word.toLowerCase();
 
           if (isAlreadyInfinitive) {
-            // This word is the infinitive itself — tag it as infinitive
             const currentTags = [...(w.tags || [])];
             if (!currentTags.includes('infinitive')) currentTags.push('infinitive');
             try {
               await this.vocabularyService.update(id, { ...w, tags: currentTags });
               verbIds.set(word.toLowerCase(), id);
-              // Track updated word
               this.verbTaggingUpdatedWords.push({ word: word, translation: translation, id });
             } catch { /* skip */ }
           } else {
-            // This is a conjugated form — link to parent infinitive
             let parentId = verbIds.get(infinitive);
 
             if (!parentId) {
-              // Parent infinitive doesn't exist yet — create it
               const translationPrompt =
                 `Translate the ${langName} infinitive verb "${infinitive}" to ${LANG_NAMES[nativeLanguage as Language] || nativeLanguage}. ` +
                 `Return ONLY the translated word, nothing else.`;
@@ -1000,7 +1175,6 @@ export class SettingsComponent implements OnInit {
               }
             }
 
-            // Link the conjugated word to its parent
             const currentTags = [...(w.tags || [])];
             if (!currentTags.includes('inflected')) currentTags.push('inflected');
             try {
@@ -1009,7 +1183,6 @@ export class SettingsComponent implements OnInit {
                 tags: currentTags,
                 parentVerbId: parentId,
               });
-              // Track updated conjugated word
               this.verbTaggingUpdatedWords.push({ word: word, translation: translation, id });
               this.verbTaggingProgress!.linked++;
             } catch { /* skip */ }
@@ -1024,6 +1197,268 @@ export class SettingsComponent implements OnInit {
       // Overall error — just stop
     } finally {
       this.isVerbTaggingRunning = false;
+    }
+  }
+
+  // ─── Tenses Generation ────────────────────────────────────────
+
+  async loadInfinitiveWords(): Promise<void> {
+    try {
+      const allWords = await this.vocabularyService.getAll();
+      this.infinitiveWords = allWords
+        .filter((w: any) => {
+          const tags: string[] = w.tags || [];
+          return tags.includes('infinitive');
+        })
+        .map((w: any) => ({
+          word: w.word || '',
+          translation: w.translation || '',
+          practiceLanguage: w.practiceLanguage || w['practice_language'] || 'es',
+          nativeLanguage: w.nativeLanguage || w['native_language'] || 'en',
+          id: w.id || w['id'] || '',
+          hasTenses: !!w.tensesId,
+        }));
+      // Clear any stale selections for words that no longer exist
+      const validIds = new Set(this.infinitiveWords.map(w => w.id));
+      for (const id of this.tensesSelection.selected) {
+        if (!validIds.has(id)) {
+          this.tensesSelection.deselect(id);
+        }
+      }
+    } catch {
+      this.infinitiveWords = [];
+    }
+  }
+
+  get filteredTensesWords(): InfinitiveVocab[] {
+    const filter = this.tensesSearchFilter.trim().toLowerCase();
+    if (!filter) return this.infinitiveWords;
+    return this.infinitiveWords.filter(w =>
+      w.word.toLowerCase().includes(filter) ||
+      w.translation.toLowerCase().includes(filter)
+    );
+  }
+
+  isAllTensesSelected(): boolean {
+    return this.infinitiveWords.length > 0 &&
+      this.tensesSelection.selected.length === this.infinitiveWords.length;
+  }
+
+  isTensesIndeterminate(): boolean {
+    const selected = this.tensesSelection.selected.length;
+    return selected > 0 && selected < this.infinitiveWords.length;
+  }
+
+  toggleAllTensesSelection(checked: boolean): void {
+    if (checked) {
+      this.tensesSelection.select(...this.infinitiveWords.map(w => w.id));
+    } else {
+      this.tensesSelection.clear();
+    }
+  }
+
+  isAllFilteredTensesSelected(): boolean {
+    const filtered = this.filteredTensesWords;
+    if (filtered.length === 0) return false;
+    return filtered.every(w => this.tensesSelection.isSelected(w.id));
+  }
+
+  isFilteredTensesIndeterminate(): boolean {
+    const filtered = this.filteredTensesWords;
+    if (filtered.length === 0) return false;
+    const selectedCount = filtered.filter(w => this.tensesSelection.isSelected(w.id)).length;
+    return selectedCount > 0 && selectedCount < filtered.length;
+  }
+
+  toggleAllFilteredTensesSelection(checked: boolean): void {
+    const filtered = this.filteredTensesWords;
+    if (checked) {
+      this.tensesSelection.select(...filtered.map(w => w.id));
+    } else {
+      for (const w of filtered) {
+        this.tensesSelection.deselect(w.id);
+      }
+    }
+  }
+
+  startTensesGeneration(): void {
+    if (this.tensesSelection.selected.length === 0) {
+      alert('Please select at least one infinitive word.');
+      return;
+    }
+    if (this.tensesGenerationModel === 'deepseek' && !this.llmService.deepseekApiKey().trim()) {
+      alert('DeepSeek API key is not configured. Please save your API key first.');
+      return;
+    }
+
+    this.shouldStopTenses = false;
+    this.isTensesGenerating = true;
+    this.tensesProgress = {
+      current: 0,
+      total: this.tensesSelection.selected.length,
+      saved: 0,
+      errors: 0,
+    };
+
+    this.runTensesGeneration();
+  }
+
+  stopTensesGeneration(): void {
+    this.shouldStopTenses = true;
+  }
+
+  private async runTensesGeneration(): Promise<void> {
+    const selectedIds = [...this.tensesSelection.selected];
+    const MAX_CONSECUTIVE_ERRORS = 5;
+    let consecutiveErrors = 0;
+
+    for (const wordId of selectedIds) {
+      if (this.shouldStopTenses) break;
+
+      const wordInfo = this.infinitiveWords.find(w => w.id === wordId);
+      if (!wordInfo) {
+        this.tensesProgress!.current++;
+        consecutiveErrors++;
+        continue;
+      }
+
+      this.tensesProgress!.currentWord = wordInfo.word;
+      this.tensesProgress!.current++;
+
+      try {
+        const tensesData = await this.generateTensesForWord(wordInfo);
+        if (!tensesData) {
+          this.tensesProgress!.errors++;
+          consecutiveErrors++;
+          if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+            alert(`Stopped after ${MAX_CONSECUTIVE_ERRORS} consecutive errors.`);
+            break;
+          }
+          continue;
+        }
+
+        try {
+          await invoke<string>('save_tenses', {
+            wordId: wordInfo.id,
+            data: tensesData,
+          });
+          this.tensesProgress!.saved++;
+          consecutiveErrors = 0;
+          wordInfo.hasTenses = true;
+        } catch (saveErr) {
+          this.tensesProgress!.errors++;
+          consecutiveErrors++;
+          if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+            alert(`Stopped after ${MAX_CONSECUTIVE_ERRORS} consecutive errors.`);
+            break;
+          }
+        }
+      } catch {
+        this.tensesProgress!.errors++;
+        consecutiveErrors++;
+        if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+          alert(`Stopped after ${MAX_CONSECUTIVE_ERRORS} consecutive errors.`);
+          break;
+        }
+      }
+    }
+
+    this.isTensesGenerating = false;
+  }
+
+  private normalizeEntry(entry: Partial<TenseEntry>): TenseEntry {
+    return {
+      pronoun: entry.pronoun ?? '',
+      conjugation: entry.conjugation ?? '',
+      translation: entry.translation ?? '',
+    };
+  }
+
+  private normalizeTenseList(list: unknown): VerbTenseData[] {
+    if (!Array.isArray(list)) return [];
+    return list.map((item) => {
+      const tense = (item ?? {}) as Partial<VerbTenseData> & { entries?: Partial<TenseEntry>[] };
+      return {
+        tenseName: tense.tenseName ?? 'Unknown',
+        description: tense.description ?? '',
+        entries: Array.isArray(tense.entries)
+          ? tense.entries.map((entry) => this.normalizeEntry(entry ?? {}))
+          : [],
+      };
+    });
+  }
+
+  private normalizeTensesData(rawData: Partial<VerbTensesData>, word: string): VerbTensesData {
+    return {
+      word: rawData.word ?? word,
+      indicativeSimple: this.normalizeTenseList(rawData.indicativeSimple),
+      indicativeCompound: this.normalizeTenseList(rawData.indicativeCompound),
+      subjunctiveSimple: this.normalizeTenseList(rawData.subjunctiveSimple),
+      subjunctiveCompound: this.normalizeTenseList(rawData.subjunctiveCompound),
+      imperative: this.normalizeTenseList(rawData.imperative),
+    };
+  }
+
+  private async generateTensesForWord(wordInfo: InfinitiveVocab): Promise<VerbTensesData | null> {
+    const langNames: Record<string, string> = { en: 'English', es: 'Spanish', fr: 'French' };
+    const pl = wordInfo.practiceLanguage;
+    const nl = wordInfo.nativeLanguage;
+    const practiceLangName = langNames[pl] ?? pl;
+    const nativeLangName = langNames[nl] ?? nl;
+
+    const prompt =
+      `Generate a complete verb conjugation table for the ${practiceLangName} verb "${wordInfo.word}" (meaning: ${wordInfo.translation}).\n` +
+      `Return ONLY valid JSON (no markdown fences, no explanations) with this exact structure:\n\n` +
+      `{\n` +
+      `  "word": "${wordInfo.word}",\n` +
+      `  "indicativeSimple": [\n` +
+      `    { "tenseName": "Present", "description": "Used for present actions and general truths.", "entries": [ {"pronoun":"...","conjugation":"...","translation":"..."}, ... ] },\n` +
+      `    { "tenseName": "Present Continuous", "description": "...", "entries": [...] },\n` +
+      `    { "tenseName": "Informal Future", "description": "...", "entries": [...] },\n` +
+      `    { "tenseName": "Preterite", "description": "...", "entries": [...] },\n` +
+      `    { "tenseName": "Imperfect", "description": "...", "entries": [...] },\n` +
+      `    { "tenseName": "Future", "description": "...", "entries": [...] },\n` +
+      `    { "tenseName": "Conditional", "description": "...", "entries": [...] }\n` +
+      `  ],\n` +
+      `  "indicativeCompound": [\n` +
+      `    { "tenseName": "Present Perfect", "entries": [...] },\n` +
+      `    { "tenseName": "Past Perfect", "entries": [...] },\n` +
+      `    { "tenseName": "Future Perfect", "entries": [...] },\n` +
+      `    { "tenseName": "Conditional Perfect", "entries": [...] }\n` +
+      `  ],\n` +
+      `  "subjunctiveSimple": [\n` +
+      `    { "tenseName": "Present Subjunctive", "entries": [...] },\n` +
+      `    { "tenseName": "Imperfect Subjunctive", "entries": [...] },\n` +
+      `    { "tenseName": "Future Subjunctive", "entries": [...] }\n` +
+      `  ],\n` +
+      `  "subjunctiveCompound": [\n` +
+      `    { "tenseName": "Present Perfect Subjunctive", "entries": [...] },\n` +
+      `    { "tenseName": "Past Perfect Subjunctive", "entries": [...] },\n` +
+      `    { "tenseName": "Future Perfect Subjunctive", "entries": [...] }\n` +
+      `  ],\n` +
+      `  "imperative": [\n` +
+      `    { "tenseName": "Affirmative", "entries": [...] },\n` +
+      `    { "tenseName": "Negative", "entries": [...] }\n` +
+      `  ]\n` +
+      `}\n\n` +
+      `Each "entries" array must have objects with "pronoun", "conjugation", and "translation" (in ${nativeLangName}).\n` +
+      `Use the standard pronoun sets for ${practiceLangName}.\n` +
+      `For imperative, omit the "yo" / first-person pronoun.\n` +
+      `Generate ALL conjugations accurately for "${wordInfo.word}".`;
+
+    const response = await this.tensesGenerate(prompt);
+
+    try {
+      const parsed = JSON.parse(response.trim()) as Partial<VerbTensesData>;
+      return this.normalizeTensesData(parsed, wordInfo.word);
+    } catch {
+      const match = response.match(/\{[\s\S]*\}/);
+      if (match) {
+        const parsed = JSON.parse(match[0]) as Partial<VerbTensesData>;
+        return this.normalizeTensesData(parsed, wordInfo.word);
+      } else {
+        throw new Error('Could not parse tenses JSON from AI response');
+      }
     }
   }
 }
