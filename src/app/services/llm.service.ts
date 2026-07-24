@@ -41,7 +41,7 @@ export class LlmService {
         dangerouslyAllowBrowser: true,
       });
       await client.chat.completions.create({
-        model: 'deepseek-chat',
+        model: 'deepseek-v4-flash',
         messages: [{ role: 'user', content: 'Hi' }],
         max_tokens: 5,
         stream: false,
@@ -68,7 +68,7 @@ export class LlmService {
       dangerouslyAllowBrowser: true,
     });
     const response = await client.chat.completions.create({
-      model: 'deepseek-chat',
+      model: 'deepseek-v4-flash',
       messages: [{ role: 'user', content: prompt }],
       stream: false,
     });
@@ -91,7 +91,7 @@ export class LlmService {
       dangerouslyAllowBrowser: true,
     });
     const stream = await client.chat.completions.create({
-      model: 'deepseek-chat',
+      model: 'deepseek-v4-flash',
       messages: [{ role: 'user', content: prompt }],
       stream: true,
     }, { signal });
