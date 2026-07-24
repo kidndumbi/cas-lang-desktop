@@ -16,6 +16,18 @@ pub struct DbState(pub Arc<AppDb>);
 }
 #[tauri::command] pub fn create_vocabulary(state: State<DbState>, word: Value) -> Result<Value, String> {
     let tree = state.0.vocabulary().map_err(|e| e.to_string())?;
+    // Check for duplicate: same word + practiceLanguage
+    let new_word_lower = word["word"].as_str().unwrap_or("").trim().to_lowercase();
+    let new_pl = word["practiceLanguage"].as_str().unwrap_or("");
+    for item in tree.iter().filter_map(|r| r.ok()) {
+        if let Ok(existing) = serde_json::from_slice::<Value>(&item.1) {
+            let ex_word = existing["word"].as_str().unwrap_or("").trim().to_lowercase();
+            let ex_pl = existing["practiceLanguage"].as_str().unwrap_or("");
+            if ex_word == new_word_lower && ex_pl == new_pl {
+                return Err("A word with this exact spelling already exists for this language pair.".to_string());
+            }
+        }
+    }
     let id = AppDb::generate_id(); let now = AppDb::now_ms();
     let mut w = word.clone();
     w["id"] = Value::String(id.clone()); w["createdAt"] = Value::Number(now.into());
