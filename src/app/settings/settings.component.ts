@@ -20,6 +20,7 @@ import { OllamaService } from '../services/ollama.service';
 import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 import { VerbTaggingModalComponent } from './verb-tagging-modal.component';
 import { PortConfirmModalComponent } from './port-confirm-modal.component';
+import { VocabDuplicatesModalComponent, VocabDuplicateGroup } from './vocab-duplicates-modal.component';
 import { VerbTensesData, VerbTenseData, TenseEntry } from '../models/tenses-data.model';
 import { invoke } from '@tauri-apps/api/core';
 
@@ -94,7 +95,7 @@ const VOCAB_STOP_WORDS = new Set([
 @Component({
   selector: 'app-settings',
   standalone: true,
-  imports: [CommonModule, FormsModule, ReactiveFormsModule, MatCardModule, MatFormFieldModule, MatSelectModule, MatButtonModule, MatCheckboxModule, MatInputModule, MatIconModule, MatProgressSpinnerModule, MatProgressBarModule, MatTableModule, MatDialogModule],
+  imports: [CommonModule, FormsModule, ReactiveFormsModule, MatCardModule, MatFormFieldModule, MatSelectModule, MatButtonModule, MatCheckboxModule, MatInputModule, MatIconModule, MatProgressSpinnerModule, MatProgressBarModule, MatTableModule, MatDialogModule, VocabDuplicatesModalComponent],
   template: `
     <div style="padding: 24px; max-width: 700px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px;">
       <!-- Languages -->
@@ -538,6 +539,22 @@ const VOCAB_STOP_WORDS = new Set([
         </mat-card-content>
       </mat-card>
 
+      <!-- Find Vocab Duplicates -->
+      <mat-card>
+        <mat-card-header><mat-card-title>Find Vocab Duplicates</mat-card-title></mat-card-header>
+        <mat-card-content>
+          <p style="font-size: 0.85em; color: #888; margin-bottom: 12px;">
+            Scan all vocabulary words and find duplicates where the same word appears multiple times for the same practice language. You can delete individual duplicate entries from the results.
+          </p>
+          <button mat-raised-button color="primary" (click)="findVocabDuplicates()" [disabled]="isFindingDuplicates">
+            @if (isFindingDuplicates) {
+              <mat-spinner diameter="20" style="display: inline-block; margin-right: 8px;"></mat-spinner>
+            }
+            <mat-icon>find_in_page</mat-icon> Find Vocab Duplicates
+          </button>
+        </mat-card-content>
+      </mat-card>
+
       <!-- API Port -->
       <mat-card>
         <mat-card-header><mat-card-title>API Port</mat-card-title></mat-card-header>
@@ -599,6 +616,9 @@ export class SettingsComponent implements OnInit {
   infinitiveWords: InfinitiveVocab[] = [];
   tensesSearchFilter = '';
   tensesSelection = new SelectionModel<string>(true, []);
+
+  // Vocab duplicates state
+  isFindingDuplicates = false;
 
   // API Port state
   portDraft = 3030;
@@ -726,6 +746,61 @@ export class SettingsComponent implements OnInit {
       this.openPortConfirmModal(false, errMsg);
     } finally {
       this.isSavingPort = false;
+    }
+  }
+
+  // ─── Find Vocab Duplicates ───────────────────────────────────
+
+  async findVocabDuplicates(): Promise<void> {
+    this.isFindingDuplicates = true;
+    try {
+      const allWords = await this.vocabularyService.getAll();
+      const wordMap = new Map<string, Array<{ id: string; word: string; translation: string; practiceLanguage: string; nativeLanguage: string; hasInfinitiveTag: boolean; hasTensesId: boolean }>>();
+
+      for (const w of allWords) {
+        const word = (w.word || '').toLowerCase().trim();
+        const practiceLanguage = w.practiceLanguage || w['practice_language'] || '';
+        const key = `${word}::${practiceLanguage}`;
+
+        if (!wordMap.has(key)) {
+          wordMap.set(key, []);
+        }
+        const tags: string[] = w.tags || [];
+        wordMap.get(key)!.push({
+          id: w.id || w['id'] || '',
+          word: w.word || '',
+          translation: w.translation || '',
+          practiceLanguage,
+          nativeLanguage: w.nativeLanguage || w['native_language'] || '',
+          hasInfinitiveTag: tags.includes('infinitive'),
+          hasTensesId: !!w.tensesId,
+        });
+      }
+
+      const groups: VocabDuplicateGroup[] = [];
+      for (const [, items] of wordMap) {
+        if (items.length > 1) {
+          groups.push({
+            word: items[0].word,
+            practiceLanguage: items[0].practiceLanguage,
+            items,
+          });
+        }
+      }
+
+      // Sort groups by word
+      groups.sort((a, b) => a.word.localeCompare(b.word));
+
+      this.dialog.open(VocabDuplicatesModalComponent, {
+        width: '700px',
+        maxHeight: '80vh',
+        data: {
+          groups,
+          onDelete: (id: string) => this.vocabularyService.delete(id),
+        },
+      });
+    } finally {
+      this.isFindingDuplicates = false;
     }
   }
 
