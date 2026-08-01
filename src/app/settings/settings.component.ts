@@ -427,6 +427,14 @@ const VOCAB_STOP_WORDS = new Set([
                 <input matInput [(ngModel)]="tensesSearchFilter" [disabled]="isTensesGenerating" placeholder="Filter by word or translation...">
                 <mat-icon matSuffix>search</mat-icon>
               </mat-form-field>
+              <mat-form-field appearance="outline" style="width: 160px;">
+                <mat-label>Tenses</mat-label>
+                <mat-select [(ngModel)]="tensesTensesFilter" [disabled]="isTensesGenerating">
+                  <mat-option value="all">All</mat-option>
+                  <mat-option value="with">With Tenses</mat-option>
+                  <mat-option value="without">Without Tenses</mat-option>
+                </mat-select>
+              </mat-form-field>
               <span style="font-size: 0.85em; color: #666; white-space: nowrap;">
                 @if (filteredTensesWords.length > 0 || tensesSearchFilter) {
                   {{ tensesSearchFilter ? filteredTensesWords.length + ' / ' : '' }}{{ infinitiveWords.length }} infinitive verbs found
@@ -615,6 +623,7 @@ export class SettingsComponent implements OnInit {
   private shouldStopTenses = false;
   infinitiveWords: InfinitiveVocab[] = [];
   tensesSearchFilter = '';
+  tensesTensesFilter: 'all' | 'with' | 'without' = 'all';
   tensesSelection = new SelectionModel<string>(true, []);
 
   // Vocab duplicates state
@@ -1306,12 +1315,27 @@ export class SettingsComponent implements OnInit {
   }
 
   get filteredTensesWords(): InfinitiveVocab[] {
-    const filter = this.tensesSearchFilter.trim().toLowerCase();
-    if (!filter) return this.infinitiveWords;
-    return this.infinitiveWords.filter(w =>
-      w.word.toLowerCase().includes(filter) ||
-      w.translation.toLowerCase().includes(filter)
-    );
+    const searchFilter = this.tensesSearchFilter.trim().toLowerCase();
+    const tensesFilter = this.tensesTensesFilter;
+
+    let result = this.infinitiveWords;
+
+    // Apply search filter
+    if (searchFilter) {
+      result = result.filter(w =>
+        w.word.toLowerCase().includes(searchFilter) ||
+        w.translation.toLowerCase().includes(searchFilter)
+      );
+    }
+
+    // Apply tenses status filter
+    if (tensesFilter === 'with') {
+      result = result.filter(w => w.hasTenses);
+    } else if (tensesFilter === 'without') {
+      result = result.filter(w => !w.hasTenses);
+    }
+
+    return result;
   }
 
   isAllTensesSelected(): boolean {
