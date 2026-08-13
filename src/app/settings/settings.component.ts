@@ -65,6 +65,27 @@ interface InfinitiveVocab {
   hasTenses?: boolean;
 }
 
+type VerbTaggingUpdatedWordItem = {
+  word: string;
+  translation: string;
+  id: string;
+};
+
+type VerbTaggingCreatedWordItem = {
+  word: string;
+  translation: string;
+  id: string;
+};
+
+type VerbTaggingUpdateSnapshot = {
+  before: any;
+  after: any;
+};
+
+type VerbTaggingCreatedSnapshot = {
+  word: any;
+};
+
 const VOCAB_CATEGORIES = [
   'everyday verbs (actions)', 'food and drink', 'animals and nature',
   'household objects', 'emotions and personality', 'transportation and travel',
@@ -613,8 +634,10 @@ export class SettingsComponent implements OnInit {
   isVerbTaggingRunning = false;
   verbTaggingProgress: { current: number; total: number; scanned: number; verbsFound: number; linked: number; currentWord?: string } | null = null;
   private shouldStopVerbTagging = false;
-  private verbTaggingUpdatedWords: Array<{ word: string; translation: string; id: string }> = [];
-  private verbTaggingCreatedWords: Array<{ word: string; translation: string }> = [];
+  private verbTaggingUpdatedWords: VerbTaggingUpdatedWordItem[] = [];
+  private verbTaggingCreatedWords: VerbTaggingCreatedWordItem[] = [];
+  private verbTaggingUpdateSnapshots = new Map<string, VerbTaggingUpdateSnapshot>();
+  private verbTaggingCreatedSnapshots = new Map<string, VerbTaggingCreatedSnapshot>();
 
   // Tenses generation state
   tensesGenerationModel = 'deepseek';
@@ -1115,6 +1138,8 @@ export class SettingsComponent implements OnInit {
     this.isVerbTaggingRunning = true;
     this.verbTaggingUpdatedWords = [];
     this.verbTaggingCreatedWords = [];
+    this.verbTaggingUpdateSnapshots.clear();
+    this.verbTaggingCreatedSnapshots.clear();
     this.verbTaggingProgress = { current: 0, total: 0, scanned: 0, verbsFound: 0, linked: 0 };
     this.runVerbTagging();
   }
@@ -1139,6 +1164,8 @@ export class SettingsComponent implements OnInit {
           createdWords: this.verbTaggingCreatedWords,
         } : null,
         onStop: () => this.stopVerbTagging(),
+        onUndoUpdated: async (id: string) => this.undoVerbTaggingUpdatedWord(id),
+        onUndoCreated: async (id: string) => this.undoVerbTaggingCreatedWord(id),
       },
     });
   }
@@ -1209,7 +1236,9 @@ export class SettingsComponent implements OnInit {
             const currentTags = [...(w.tags || [])];
             if (!currentTags.includes('not verb')) currentTags.push('not verb');
             try {
-              await this.vocabularyService.update(id, { ...w, tags: currentTags });
+              const updatedWord = { ...w, tags: currentTags };
+              await this.vocabularyService.update(id, updatedWord);
+              this.recordVerbTaggingUpdatedWord(id, word, translation, w, updatedWord);
             } catch { /* skip */ }
             this.verbTaggingProgress!.scanned++;
             continue;
@@ -1223,9 +1252,10 @@ export class SettingsComponent implements OnInit {
             const currentTags = [...(w.tags || [])];
             if (!currentTags.includes('infinitive')) currentTags.push('infinitive');
             try {
-              await this.vocabularyService.update(id, { ...w, tags: currentTags });
+              const updatedWord = { ...w, tags: currentTags };
+              await this.vocabularyService.update(id, updatedWord);
               verbIds.set(word.toLowerCase(), id);
-              this.verbTaggingUpdatedWords.push({ word: word, translation: translation, id });
+              this.recordVerbTaggingUpdatedWord(id, word, translation, w, updatedWord);
             } catch { /* skip */ }
           } else {
             let parentId = verbIds.get(infinitive);
@@ -1251,7 +1281,11 @@ export class SettingsComponent implements OnInit {
                 });
                 parentId = newVerb.id || newVerb['id'];
                 verbIds.set(infinitive, parentId!);
-                this.verbTaggingCreatedWords.push({ word: infinitive, translation: infinitiveTranslation || translation });
+                this.recordVerbTaggingCreatedWord(parentId!, {
+                  ...newVerb,
+                  id: parentId,
+                });
+                this.verbTaggingCreatedWords.push({ id: parentId!, word: infinitive, translation: infinitiveTranslation || translation });
                 this.verbTaggingProgress!.linked++;
               } catch {
                 this.verbTaggingProgress!.scanned++;
@@ -1262,12 +1296,13 @@ export class SettingsComponent implements OnInit {
             const currentTags = [...(w.tags || [])];
             if (!currentTags.includes('inflected')) currentTags.push('inflected');
             try {
-              await this.vocabularyService.update(id, {
+              const updatedWord = {
                 ...w,
                 tags: currentTags,
                 parentVerbId: parentId,
-              });
-              this.verbTaggingUpdatedWords.push({ word: word, translation: translation, id });
+              };
+              await this.vocabularyService.update(id, updatedWord);
+              this.recordVerbTaggingUpdatedWord(id, word, translation, w, updatedWord);
               this.verbTaggingProgress!.linked++;
             } catch { /* skip */ }
           }
@@ -1281,6 +1316,71 @@ export class SettingsComponent implements OnInit {
       // Overall error — just stop
     } finally {
       this.isVerbTaggingRunning = false;
+    }
+  }
+
+  private cloneVerbTaggingWord(word: any): any {
+    return JSON.parse(JSON.stringify(word));
+  }
+
+  private recordVerbTaggingUpdatedWord(
+    id: string,
+    word: string,
+    translation: string,
+    beforeWord: any,
+    afterWord: any,
+  ): void {
+    if (!id) return;
+
+    if (!this.verbTaggingUpdatedWords.some((item) => item.id === id)) {
+      this.verbTaggingUpdatedWords.push({ id, word, translation });
+    }
+
+    this.verbTaggingUpdateSnapshots.set(id, {
+      before: this.cloneVerbTaggingWord(beforeWord),
+      after: this.cloneVerbTaggingWord(afterWord),
+    });
+  }
+
+  private recordVerbTaggingCreatedWord(id: string, word: any): void {
+    if (!id) return;
+    this.verbTaggingCreatedSnapshots.set(id, {
+      word: this.cloneVerbTaggingWord(word),
+    });
+  }
+
+  private async undoVerbTaggingUpdatedWord(id: string): Promise<void> {
+    const snapshot = this.verbTaggingUpdateSnapshots.get(id);
+    if (!snapshot) return;
+
+    try {
+      await this.vocabularyService.update(id, snapshot.before);
+      this.verbTaggingUpdateSnapshots.delete(id);
+      this.verbTaggingUpdatedWords = this.verbTaggingUpdatedWords.filter((item) => item.id !== id);
+    } catch {
+      throw new Error('Could not undo this update.');
+    }
+  }
+
+  private async undoVerbTaggingCreatedWord(id: string): Promise<void> {
+    const createdSnapshot = this.verbTaggingCreatedSnapshots.get(id);
+    if (!createdSnapshot) return;
+
+    try {
+      const linkedUpdates = Array.from(this.verbTaggingUpdateSnapshots.entries())
+        .filter(([, snapshot]) => snapshot.after?.parentVerbId === id);
+
+      for (const [wordId, snapshot] of linkedUpdates) {
+        await this.vocabularyService.update(wordId, snapshot.before);
+        this.verbTaggingUpdateSnapshots.delete(wordId);
+        this.verbTaggingUpdatedWords = this.verbTaggingUpdatedWords.filter((item) => item.id !== wordId);
+      }
+
+      await this.vocabularyService.delete(id);
+      this.verbTaggingCreatedSnapshots.delete(id);
+      this.verbTaggingCreatedWords = this.verbTaggingCreatedWords.filter((item) => item.id !== id);
+    } catch {
+      throw new Error('Could not undo this created verb.');
     }
   }
 
