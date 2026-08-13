@@ -10,14 +10,30 @@ import { MatDialogRef, MAT_DIALOG_DATA, MatDialogModule } from '@angular/materia
 export interface VerbTaggingModalData {
   progress: VerbTaggingProgress | null;
   onStop: () => void;
+  onUndoUpdated?: (id: string) => Promise<void> | void;
+  onUndoCreated?: (id: string) => Promise<void> | void;
 }
+
+export type VerbTaggingUndoState = 'idle' | 'working' | 'done' | 'error';
 
 export interface VerbTaggingProgress {
   status: 'idle' | 'running' | 'completed' | 'stopping' | 'error';
   current: number;
   total: number;
-  updatedWords: Array<{ word: string; translation: string; id: string }>;
-  createdWords: Array<{ word: string; translation: string }>;
+  updatedWords: Array<{
+    word: string;
+    translation: string;
+    id: string;
+    undoState?: VerbTaggingUndoState;
+    undoError?: string;
+  }>;
+  createdWords: Array<{
+    word: string;
+    translation: string;
+    id: string;
+    undoState?: VerbTaggingUndoState;
+    undoError?: string;
+  }>;
   error?: string;
 }
 
@@ -86,6 +102,7 @@ export interface VerbTaggingProgress {
                     <tr>
                       <th style="text-align: left; padding: 8px 12px; border-bottom: 1px solid #e0e0e0;">Word</th>
                       <th style="text-align: left; padding: 8px 12px; border-bottom: 1px solid #e0e0e0;">Translation</th>
+                      <th style="text-align: right; padding: 8px 12px; border-bottom: 1px solid #e0e0e0;">Action</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -93,6 +110,24 @@ export interface VerbTaggingProgress {
                       <tr>
                         <td style="padding: 6px 12px; border-bottom: 1px solid #f0f0f0;">{{ w.word }}</td>
                         <td style="padding: 6px 12px; border-bottom: 1px solid #f0f0f0;">{{ w.translation }}</td>
+                        <td style="padding: 6px 12px; border-bottom: 1px solid #f0f0f0; text-align: right;">
+                          @if (w.undoState === 'done') {
+                            <span style="color: #2e7d32; font-size: 0.8em; font-weight: 500;">Undone</span>
+                          }
+                          @else {
+                            <button
+                              mat-stroked-button
+                              color="primary"
+                              style="height: 28px; line-height: 26px;"
+                              [disabled]="w.undoState === 'working'"
+                              (click)="undoUpdated(w.id)">
+                              {{ w.undoState === 'working' ? 'Undoing...' : 'Undo' }}
+                            </button>
+                          }
+                          @if (w.undoState === 'error' && w.undoError) {
+                            <div style="color: #d32f2f; font-size: 0.75em; margin-top: 4px;">{{ w.undoError }}</div>
+                          }
+                        </td>
                       </tr>
                     }
                   </tbody>
@@ -113,13 +148,32 @@ export interface VerbTaggingProgress {
                     <tr>
                       <th style="text-align: left; padding: 8px 12px; border-bottom: 1px solid #e0e0e0;">Verb</th>
                       <th style="text-align: left; padding: 8px 12px; border-bottom: 1px solid #e0e0e0;">Translation</th>
+                      <th style="text-align: right; padding: 8px 12px; border-bottom: 1px solid #e0e0e0;">Action</th>
                     </tr>
                   </thead>
                   <tbody>
-                    @for (w of data.progress.createdWords; track $index) {
+                    @for (w of data.progress.createdWords; track w.id) {
                       <tr>
                         <td style="padding: 6px 12px; border-bottom: 1px solid #f0f0f0;">{{ w.word }}</td>
                         <td style="padding: 6px 12px; border-bottom: 1px solid #f0f0f0;">{{ w.translation }}</td>
+                        <td style="padding: 6px 12px; border-bottom: 1px solid #f0f0f0; text-align: right;">
+                          @if (w.undoState === 'done') {
+                            <span style="color: #2e7d32; font-size: 0.8em; font-weight: 500;">Undone</span>
+                          }
+                          @else {
+                            <button
+                              mat-stroked-button
+                              color="primary"
+                              style="height: 28px; line-height: 26px;"
+                              [disabled]="w.undoState === 'working'"
+                              (click)="undoCreated(w.id)">
+                              {{ w.undoState === 'working' ? 'Undoing...' : 'Undo' }}
+                            </button>
+                          }
+                          @if (w.undoState === 'error' && w.undoError) {
+                            <div style="color: #d32f2f; font-size: 0.75em; margin-top: 4px;">{{ w.undoError }}</div>
+                          }
+                        </td>
                       </tr>
                     }
                   </tbody>
@@ -132,13 +186,13 @@ export interface VerbTaggingProgress {
       }
     </mat-dialog-content>
     <mat-dialog-actions align="end">
-      @if (data?.progress?.status === 'running') {
+      @if (data.progress?.status === 'running') {
         <button mat-raised-button color="warn" (click)="stop()">
           <mat-icon>stop</mat-icon> Stop
         </button>
       }
       <button mat-button (click)="close()">
-        {{ data?.progress?.status === 'completed' ? 'Close' : 'Minimize' }}
+        {{ data.progress?.status === 'completed' ? 'Close' : 'Minimize' }}
       </button>
     </mat-dialog-actions>
   `,
@@ -156,6 +210,36 @@ export class VerbTaggingModalComponent {
 
   stop(): void {
     this.data?.onStop();
+  }
+
+  async undoUpdated(id: string): Promise<void> {
+    const item = this.data?.progress?.updatedWords?.find((w) => w.id === id);
+    if (!item || item.undoState === 'working' || item.undoState === 'done') return;
+
+    item.undoState = 'working';
+    item.undoError = undefined;
+    try {
+      await this.data?.onUndoUpdated?.(id);
+      item.undoState = 'done';
+    } catch (error: any) {
+      item.undoState = 'error';
+      item.undoError = error?.message || 'Undo failed';
+    }
+  }
+
+  async undoCreated(id: string): Promise<void> {
+    const item = this.data?.progress?.createdWords?.find((w) => w.id === id);
+    if (!item || item.undoState === 'working' || item.undoState === 'done') return;
+
+    item.undoState = 'working';
+    item.undoError = undefined;
+    try {
+      await this.data?.onUndoCreated?.(id);
+      item.undoState = 'done';
+    } catch (error: any) {
+      item.undoState = 'error';
+      item.undoError = error?.message || 'Undo failed';
+    }
   }
 
   close(): void {

@@ -1,4 +1,4 @@
-import { Component, OnInit, inject } from '@angular/core';
+import { Component, OnInit, inject, signal } from '@angular/core';
 import { FormBuilder, FormGroup, FormsModule, ReactiveFormsModule } from '@angular/forms';
 import { MatCardModule } from '@angular/material/card';
 import { MatFormFieldModule } from '@angular/material/form-field';
@@ -17,10 +17,13 @@ import { LlmService } from '../services/llm.service';
 import { ExerciseService } from '../services/exercise.service';
 import { VocabularyService } from '../services/vocabulary.service';
 import { OllamaService } from '../services/ollama.service';
+import { TagService } from '../services/tag.service';
 import { MatDialog, MatDialogModule } from '@angular/material/dialog';
+import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { VerbTaggingModalComponent } from './verb-tagging-modal.component';
 import { PortConfirmModalComponent } from './port-confirm-modal.component';
 import { VocabDuplicatesModalComponent, VocabDuplicateGroup } from './vocab-duplicates-modal.component';
+import { VocabularyEditWordModalComponent } from '../vocabulary/components/vocabulary-edit-word-modal.component';
 import { VerbTensesData, VerbTenseData, TenseEntry } from '../models/tenses-data.model';
 import { invoke } from '@tauri-apps/api/core';
 
@@ -63,7 +66,29 @@ interface InfinitiveVocab {
   nativeLanguage: string;
   id: string;
   hasTenses?: boolean;
+  source?: any;
 }
+
+type VerbTaggingUpdatedWordItem = {
+  word: string;
+  translation: string;
+  id: string;
+};
+
+type VerbTaggingCreatedWordItem = {
+  word: string;
+  translation: string;
+  id: string;
+};
+
+type VerbTaggingUpdateSnapshot = {
+  before: any;
+  after: any;
+};
+
+type VerbTaggingCreatedSnapshot = {
+  word: any;
+};
 
 const VOCAB_CATEGORIES = [
   'everyday verbs (actions)', 'food and drink', 'animals and nature',
@@ -95,7 +120,7 @@ const VOCAB_STOP_WORDS = new Set([
 @Component({
   selector: 'app-settings',
   standalone: true,
-  imports: [CommonModule, FormsModule, ReactiveFormsModule, MatCardModule, MatFormFieldModule, MatSelectModule, MatButtonModule, MatCheckboxModule, MatInputModule, MatIconModule, MatProgressSpinnerModule, MatProgressBarModule, MatTableModule, MatDialogModule, VocabDuplicatesModalComponent],
+  imports: [CommonModule, FormsModule, ReactiveFormsModule, MatCardModule, MatFormFieldModule, MatSelectModule, MatButtonModule, MatCheckboxModule, MatInputModule, MatIconModule, MatProgressSpinnerModule, MatProgressBarModule, MatTableModule, MatDialogModule, MatSnackBarModule, VocabDuplicatesModalComponent, VocabularyEditWordModalComponent],
   template: `
     <div style="padding: 24px; max-width: 700px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px;">
       <!-- Languages -->
@@ -466,6 +491,7 @@ const VOCAB_STOP_WORDS = new Set([
                       <th style="padding: 8px 12px; text-align: left;">Translation</th>
                       <th style="padding: 8px 12px; text-align: left;">Language</th>
                       <th style="padding: 8px 12px; text-align: center;">Has Tenses</th>
+                      <th style="padding: 8px 12px; text-align: center;">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -490,6 +516,11 @@ const VOCAB_STOP_WORDS = new Set([
                           @else {
                             <mat-icon style="font-size: 18px; color: #bdbdbd;">radio_button_unchecked</mat-icon>
                           }
+                        </td>
+                        <td style="padding: 6px 12px; text-align: center;">
+                          <button mat-icon-button (click)="openEditTensesWord(item)" [disabled]="isTensesGenerating" title="Edit word">
+                            <mat-icon style="font-size: 18px;">edit</mat-icon>
+                          </button>
                         </td>
                       </tr>
                     }
@@ -586,6 +617,15 @@ const VOCAB_STOP_WORDS = new Set([
         </mat-card-content>
       </mat-card>
     </div>
+
+    <!-- Edit Word Modal -->
+    <app-vocabulary-edit-word-modal
+      [isOpen]="showEditTensesModal"
+      [word]="editingTensesWord"
+      [allTags]="allTags()"
+      (closed)="showEditTensesModal = false"
+      (saved)="handleTensesEditSave($event)">
+    </app-vocabulary-edit-word-modal>
   `,
 })
 export class SettingsComponent implements OnInit {
@@ -594,6 +634,8 @@ export class SettingsComponent implements OnInit {
   ollamaService = inject(OllamaService);
   private exerciseService = inject(ExerciseService);
   private vocabularyService = inject(VocabularyService);
+  private tagService = inject(TagService);
+  private snackBar = inject(MatSnackBar);
   private ss = inject(SettingsService);
 
   // Bulk generation state
@@ -613,8 +655,10 @@ export class SettingsComponent implements OnInit {
   isVerbTaggingRunning = false;
   verbTaggingProgress: { current: number; total: number; scanned: number; verbsFound: number; linked: number; currentWord?: string } | null = null;
   private shouldStopVerbTagging = false;
-  private verbTaggingUpdatedWords: Array<{ word: string; translation: string; id: string }> = [];
-  private verbTaggingCreatedWords: Array<{ word: string; translation: string }> = [];
+  private verbTaggingUpdatedWords: VerbTaggingUpdatedWordItem[] = [];
+  private verbTaggingCreatedWords: VerbTaggingCreatedWordItem[] = [];
+  private verbTaggingUpdateSnapshots = new Map<string, VerbTaggingUpdateSnapshot>();
+  private verbTaggingCreatedSnapshots = new Map<string, VerbTaggingCreatedSnapshot>();
 
   // Tenses generation state
   tensesGenerationModel = 'deepseek';
@@ -625,6 +669,9 @@ export class SettingsComponent implements OnInit {
   tensesSearchFilter = '';
   tensesTensesFilter: 'all' | 'with' | 'without' = 'all';
   tensesSelection = new SelectionModel<string>(true, []);
+  showEditTensesModal = false;
+  editingTensesWord: any = null;
+  allTags = signal<string[]>([]);
 
   // Vocab duplicates state
   isFindingDuplicates = false;
@@ -667,6 +714,7 @@ export class SettingsComponent implements OnInit {
     this.ollamaService.fetchModels();
     await this.loadPort();
     this.loadInfinitiveWords();
+    this.loadAllTags();
   }
 
   onApiKeyChange(event: Event): void {
@@ -1115,6 +1163,8 @@ export class SettingsComponent implements OnInit {
     this.isVerbTaggingRunning = true;
     this.verbTaggingUpdatedWords = [];
     this.verbTaggingCreatedWords = [];
+    this.verbTaggingUpdateSnapshots.clear();
+    this.verbTaggingCreatedSnapshots.clear();
     this.verbTaggingProgress = { current: 0, total: 0, scanned: 0, verbsFound: 0, linked: 0 };
     this.runVerbTagging();
   }
@@ -1139,6 +1189,8 @@ export class SettingsComponent implements OnInit {
           createdWords: this.verbTaggingCreatedWords,
         } : null,
         onStop: () => this.stopVerbTagging(),
+        onUndoUpdated: async (id: string) => this.undoVerbTaggingUpdatedWord(id),
+        onUndoCreated: async (id: string) => this.undoVerbTaggingCreatedWord(id),
       },
     });
   }
@@ -1209,7 +1261,9 @@ export class SettingsComponent implements OnInit {
             const currentTags = [...(w.tags || [])];
             if (!currentTags.includes('not verb')) currentTags.push('not verb');
             try {
-              await this.vocabularyService.update(id, { ...w, tags: currentTags });
+              const updatedWord = { ...w, tags: currentTags };
+              await this.vocabularyService.update(id, updatedWord);
+              this.recordVerbTaggingUpdatedWord(id, word, translation, w, updatedWord);
             } catch { /* skip */ }
             this.verbTaggingProgress!.scanned++;
             continue;
@@ -1223,9 +1277,10 @@ export class SettingsComponent implements OnInit {
             const currentTags = [...(w.tags || [])];
             if (!currentTags.includes('infinitive')) currentTags.push('infinitive');
             try {
-              await this.vocabularyService.update(id, { ...w, tags: currentTags });
+              const updatedWord = { ...w, tags: currentTags };
+              await this.vocabularyService.update(id, updatedWord);
               verbIds.set(word.toLowerCase(), id);
-              this.verbTaggingUpdatedWords.push({ word: word, translation: translation, id });
+              this.recordVerbTaggingUpdatedWord(id, word, translation, w, updatedWord);
             } catch { /* skip */ }
           } else {
             let parentId = verbIds.get(infinitive);
@@ -1251,7 +1306,11 @@ export class SettingsComponent implements OnInit {
                 });
                 parentId = newVerb.id || newVerb['id'];
                 verbIds.set(infinitive, parentId!);
-                this.verbTaggingCreatedWords.push({ word: infinitive, translation: infinitiveTranslation || translation });
+                this.recordVerbTaggingCreatedWord(parentId!, {
+                  ...newVerb,
+                  id: parentId,
+                });
+                this.verbTaggingCreatedWords.push({ id: parentId!, word: infinitive, translation: infinitiveTranslation || translation });
                 this.verbTaggingProgress!.linked++;
               } catch {
                 this.verbTaggingProgress!.scanned++;
@@ -1262,12 +1321,13 @@ export class SettingsComponent implements OnInit {
             const currentTags = [...(w.tags || [])];
             if (!currentTags.includes('inflected')) currentTags.push('inflected');
             try {
-              await this.vocabularyService.update(id, {
+              const updatedWord = {
                 ...w,
                 tags: currentTags,
                 parentVerbId: parentId,
-              });
-              this.verbTaggingUpdatedWords.push({ word: word, translation: translation, id });
+              };
+              await this.vocabularyService.update(id, updatedWord);
+              this.recordVerbTaggingUpdatedWord(id, word, translation, w, updatedWord);
               this.verbTaggingProgress!.linked++;
             } catch { /* skip */ }
           }
@@ -1281,6 +1341,71 @@ export class SettingsComponent implements OnInit {
       // Overall error — just stop
     } finally {
       this.isVerbTaggingRunning = false;
+    }
+  }
+
+  private cloneVerbTaggingWord(word: any): any {
+    return JSON.parse(JSON.stringify(word));
+  }
+
+  private recordVerbTaggingUpdatedWord(
+    id: string,
+    word: string,
+    translation: string,
+    beforeWord: any,
+    afterWord: any,
+  ): void {
+    if (!id) return;
+
+    if (!this.verbTaggingUpdatedWords.some((item) => item.id === id)) {
+      this.verbTaggingUpdatedWords.push({ id, word, translation });
+    }
+
+    this.verbTaggingUpdateSnapshots.set(id, {
+      before: this.cloneVerbTaggingWord(beforeWord),
+      after: this.cloneVerbTaggingWord(afterWord),
+    });
+  }
+
+  private recordVerbTaggingCreatedWord(id: string, word: any): void {
+    if (!id) return;
+    this.verbTaggingCreatedSnapshots.set(id, {
+      word: this.cloneVerbTaggingWord(word),
+    });
+  }
+
+  private async undoVerbTaggingUpdatedWord(id: string): Promise<void> {
+    const snapshot = this.verbTaggingUpdateSnapshots.get(id);
+    if (!snapshot) return;
+
+    try {
+      await this.vocabularyService.update(id, snapshot.before);
+      this.verbTaggingUpdateSnapshots.delete(id);
+      this.verbTaggingUpdatedWords = this.verbTaggingUpdatedWords.filter((item) => item.id !== id);
+    } catch {
+      throw new Error('Could not undo this update.');
+    }
+  }
+
+  private async undoVerbTaggingCreatedWord(id: string): Promise<void> {
+    const createdSnapshot = this.verbTaggingCreatedSnapshots.get(id);
+    if (!createdSnapshot) return;
+
+    try {
+      const linkedUpdates = Array.from(this.verbTaggingUpdateSnapshots.entries())
+        .filter(([, snapshot]) => snapshot.after?.parentVerbId === id);
+
+      for (const [wordId, snapshot] of linkedUpdates) {
+        await this.vocabularyService.update(wordId, snapshot.before);
+        this.verbTaggingUpdateSnapshots.delete(wordId);
+        this.verbTaggingUpdatedWords = this.verbTaggingUpdatedWords.filter((item) => item.id !== wordId);
+      }
+
+      await this.vocabularyService.delete(id);
+      this.verbTaggingCreatedSnapshots.delete(id);
+      this.verbTaggingCreatedWords = this.verbTaggingCreatedWords.filter((item) => item.id !== id);
+    } catch {
+      throw new Error('Could not undo this created verb.');
     }
   }
 
@@ -1301,6 +1426,7 @@ export class SettingsComponent implements OnInit {
           nativeLanguage: w.nativeLanguage || w['native_language'] || 'en',
           id: w.id || w['id'] || '',
           hasTenses: !!w.tensesId,
+          source: w,
         }));
       // Clear any stale selections for words that no longer exist
       const validIds = new Set(this.infinitiveWords.map(w => w.id));
@@ -1311,6 +1437,44 @@ export class SettingsComponent implements OnInit {
       }
     } catch {
       this.infinitiveWords = [];
+    }
+  }
+
+  async loadAllTags(): Promise<void> {
+    try {
+      this.allTags.set(await this.tagService.getAll());
+    } catch {
+      this.allTags.set([]);
+    }
+  }
+
+  openEditTensesWord(item: InfinitiveVocab): void {
+    this.editingTensesWord = item.source ?? item;
+    this.showEditTensesModal = true;
+  }
+
+  async handleTensesEditSave(payload: { word: string; translation: string; difficulty: string; notes: string; tags: string[] }): Promise<void> {
+    const current = this.editingTensesWord;
+    const currentId = current?.id ?? current?.['id'];
+    if (!currentId) {
+      this.showEditTensesModal = false;
+      return;
+    }
+    const updated = {
+      ...current,
+      word: payload.word,
+      translation: payload.translation,
+      difficulty: payload.difficulty || undefined,
+      notes: payload.notes || undefined,
+      tags: payload.tags,
+    };
+    try {
+      await this.vocabularyService.update(currentId, updated);
+      this.showEditTensesModal = false;
+      this.snackBar.open('Word updated', 'OK', { duration: 2000 });
+      await this.loadInfinitiveWords();
+    } catch {
+      this.snackBar.open('Failed to update word', 'OK', { duration: 3000 });
     }
   }
 
