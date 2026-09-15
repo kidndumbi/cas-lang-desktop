@@ -40,12 +40,18 @@ export class LlmService {
         baseURL: 'https://api.deepseek.com',
         dangerouslyAllowBrowser: true,
       });
-      await client.chat.completions.create({
-        model: 'deepseek-v4-flash',
+      // Non-streaming responses can hang indefinitely on DeepSeek's reasoning models; stream instead.
+      const stream: any = await client.chat.completions.create({
+        model: 'deepseek-v4-pro',
         messages: [{ role: 'user', content: 'Hi' }],
         max_tokens: 5,
-        stream: false,
-      });
+        stream: true,
+        // deepseek-flash defaults to "thinking" mode, which can hang on trivial prompts; force it off.
+        thinking: { type: 'disabled' },
+      } as any);
+      for await (const _chunk of stream) {
+        // draining the stream confirms the key/connection works; content itself is irrelevant for this test
+      }
       this.deepseekKeyTestResult.set('success');
       this.deepseekKeyTestMessage.set('API key is valid and working.');
     } catch (err: unknown) {
@@ -58,21 +64,10 @@ export class LlmService {
   }
 
   async generateWithDeepseek(prompt: string): Promise<string> {
-    const apiKey = this.deepseekApiKey();
-    if (!apiKey) {
-      throw new Error('No DeepSeek API key configured. Please add your API key in Settings.');
-    }
-    const client = new OpenAI({
-      apiKey,
-      baseURL: 'https://api.deepseek.com',
-      dangerouslyAllowBrowser: true,
-    });
-    const response = await client.chat.completions.create({
-      model: 'deepseek-v4-flash',
-      messages: [{ role: 'user', content: prompt }],
-      stream: false,
-    });
-    return response.choices[0]?.message?.content?.trim() ?? '';
+    // DeepSeek reasoning models can hang on non-streaming responses; read via stream and collect the full text.
+    let full = '';
+    await this.generateWithDeepseekStream(prompt, (chunk) => { full += chunk; });
+    return full;
   }
 
   /** Stream a response from DeepSeek, calling onChunk for each text fragment and onDone when complete */
@@ -90,11 +85,13 @@ export class LlmService {
       baseURL: 'https://api.deepseek.com',
       dangerouslyAllowBrowser: true,
     });
-    const stream = await client.chat.completions.create({
-      model: 'deepseek-v4-flash',
+    const stream: any = await client.chat.completions.create({
+      model: 'deepseek-v4-pro',
       messages: [{ role: 'user', content: prompt }],
       stream: true,
-    }, { signal });
+      // deepseek-flash defaults to "thinking" mode, which can hang/stall on simple prompts; force it off.
+      thinking: { type: 'disabled' },
+    } as any, { signal });
 
     let full = '';
     for await (const chunk of stream) {
