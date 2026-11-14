@@ -211,6 +211,8 @@ pub struct ExercisePracticeSnapshot {
     pub practice_mode: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub options: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dialogue_line: Option<String>,
 }
 
 // ─── Exercise Logs ─────────────────────────────────────────────────────
@@ -261,6 +263,10 @@ pub struct PracticeSessionLog {
     pub conversation_attempts: i32,
     #[serde(default)]
     pub conversation_correct: i32,
+    #[serde(default)]
+    pub typed_conversation_attempts: i32,
+    #[serde(default)]
+    pub typed_conversation_correct: i32,
 }
 
 // ─── Tenses ─────────────────────────────────────────────────────────────
