@@ -238,6 +238,7 @@ async fn handle_update_exercise_stats(
                         &snapshot.native_text,
                         snapshot.practice_mode.as_deref().unwrap_or(""),
                         &snapshot.options,
+                        &snapshot.dialogue_line,
                     );
                 } else {
                     log_exercise_practice(
@@ -248,6 +249,7 @@ async fn handle_update_exercise_stats(
                         "",
                         "",
                         "",
+                        &None,
                         &None,
                     );
                 }
@@ -442,6 +444,7 @@ fn log_exercise_practice(
     native_text: &str,
     practice_mode: &str,
     options: &Option<Vec<String>>,
+    dialogue_line: &Option<String>,
 ) {
     if let Ok(tree) = db.exercise_logs() {
         let logs_key = format!("exercise_logs_{}", exercise_id);
@@ -471,6 +474,7 @@ fn log_exercise_practice(
                 "nativeText": native_text,
                 "practiceMode": practice_mode,
                 "options": options,
+                "dialogueLine": dialogue_line,
             })),
             update_details: None,
         };
@@ -506,6 +510,8 @@ fn log_exercise_practice_session(
                     spell_the_blanks_correct: 0,
                     conversation_attempts: 0,
                     conversation_correct: 0,
+                    typed_conversation_attempts: 0,
+                    typed_conversation_correct: 0,
                 })
             }
             _ => PracticeSessionLog {
@@ -521,6 +527,8 @@ fn log_exercise_practice_session(
                 spell_the_blanks_correct: 0,
                 conversation_attempts: 0,
                 conversation_correct: 0,
+                typed_conversation_attempts: 0,
+                typed_conversation_correct: 0,
             },
         };
 
@@ -557,6 +565,12 @@ fn log_exercise_practice_session(
                 session.conversation_attempts += 1;
                 if correct {
                     session.conversation_correct += 1;
+                }
+            }
+            "typed-conversation" => {
+                session.typed_conversation_attempts += 1;
+                if correct {
+                    session.typed_conversation_correct += 1;
                 }
             }
             _ => {}
