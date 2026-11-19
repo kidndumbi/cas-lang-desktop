@@ -82,3 +82,26 @@ impl AppDb {
         chrono::Utc::now().timestamp_millis()
     }
 }
+
+// TEMPORARY - remove after tenses DB is cleared
+pub fn clear_all_tenses(db: &AppDb) -> Result<usize, sled::Error> {
+    let tenses = db.tenses()?;
+    let count = tenses.len();
+    tenses.clear()?;
+    let vocab = db.vocabulary()?;
+    for entry in vocab.iter() {
+        let (key, bytes) = entry?;
+        if let Ok(mut word) = serde_json::from_slice::<serde_json::Value>(&bytes) {
+            if let Some(obj) = word.as_object_mut() {
+                if obj.remove("tensesId").is_some() {
+                    if let Ok(json) = serde_json::to_vec(&word) {
+                        vocab.insert(key, json)?;
+                    }
+                }
+            }
+        }
+    }
+    tenses.flush()?;
+    vocab.flush()?;
+    Ok(count)
+}

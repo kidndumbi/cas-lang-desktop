@@ -269,42 +269,6 @@ pub struct PracticeSessionLog {
     pub typed_conversation_correct: i32,
 }
 
-// ─── Tenses ─────────────────────────────────────────────────────────────
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TenseEntry {
-    pub pronoun: String,
-    pub conjugation: String,
-    pub translation: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct VerbTenseData {
-    #[serde(rename = "tenseName")]
-    pub tense_name: String,
-    pub description: String,
-    pub entries: Vec<TenseEntry>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct VerbTensesData {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub id: Option<String>,
-    pub word: String,
-    #[serde(rename = "indicativeSimple")]
-    pub indicative_simple: Vec<VerbTenseData>,
-    #[serde(rename = "indicativeCompound")]
-    pub indicative_compound: Vec<VerbTenseData>,
-    #[serde(rename = "subjunctiveSimple")]
-    pub subjunctive_simple: Vec<VerbTenseData>,
-    #[serde(rename = "subjunctiveCompound")]
-    pub subjunctive_compound: Vec<VerbTenseData>,
-    pub imperative: Vec<VerbTenseData>,
-}
-
 // ─── Exercise AI Chat ───────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
