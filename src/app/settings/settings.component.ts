@@ -392,22 +392,6 @@ const VOCAB_STOP_WORDS = new Set([
         </mat-card-content>
       </mat-card>
 
-      <!-- TEMPORARY - remove after tenses DB is cleared -->
-      <mat-card>
-        <mat-card-header><mat-card-title>Temporary: Clear Tenses Data</mat-card-title></mat-card-header>
-        <mat-card-content>
-          <p style="font-size: 0.85em; color: #888; margin-bottom: 12px;">
-            The verb tenses feature has been retired. This permanently deletes all stored tenses data and unlinks it from every word.
-          </p>
-          <button mat-raised-button color="warn" (click)="clearTensesData()" [disabled]="isClearingTenses">
-            @if (isClearingTenses) {
-              <mat-spinner diameter="20" style="display: inline-block; margin-right: 8px;"></mat-spinner>
-            }
-            <mat-icon>delete_sweep</mat-icon> Clear Tenses Data
-          </button>
-        </mat-card-content>
-      </mat-card>
-
       <!-- Find Vocab Duplicates -->
       <mat-card>
         <mat-card-header><mat-card-title>Find Vocab Duplicates</mat-card-title></mat-card-header>
@@ -480,9 +464,6 @@ export class SettingsComponent implements OnInit {
   private verbTaggingUpdateSnapshots = new Map<string, VerbTaggingUpdateSnapshot>();
   private verbTaggingCreatedSnapshots = new Map<string, VerbTaggingCreatedSnapshot>();
 
-
-  // TEMPORARY - remove after tenses DB is cleared
-  isClearingTenses = false;
 
   // Vocab duplicates state
   isFindingDuplicates = false;
@@ -588,21 +569,6 @@ export class SettingsComponent implements OnInit {
 
   stopBulkGeneration(): void {
     this.shouldStopBulk = true;
-  }
-
-  // TEMPORARY - remove after tenses DB is cleared
-  async clearTensesData(): Promise<void> {
-    if (!window.confirm('Permanently delete ALL stored tenses data and unlink it from every word? This cannot be undone.')) return;
-    this.isClearingTenses = true;
-    try {
-      const cleared = await invoke<number>('clear_all_tenses');
-      this.snackBar.open(`Cleared tenses data (${cleared} entries removed)`, 'OK', { duration: 3000 });
-    } catch (err) {
-      const errMsg = typeof err === 'string' ? err : (err instanceof Error ? err.message : 'Failed to clear tenses data');
-      this.snackBar.open(errMsg, 'OK', { duration: 4000 });
-    } finally {
-      this.isClearingTenses = false;
-    }
   }
 
   // ─── API Port ─────────────────────────────────────────────────
