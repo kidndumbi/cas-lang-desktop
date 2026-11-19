@@ -246,7 +246,6 @@ pub fn run() {
             commands::get_tags,
             commands::add_tag,
             commands::delete_tag,
-            commands::clear_all_tenses,
             commands::get_vocabulary_session_logs,
             commands::get_exercise_session_logs,
             commands::get_vocabulary_logs,

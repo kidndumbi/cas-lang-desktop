@@ -122,11 +122,6 @@ pub struct DbState(pub Arc<AppDb>);
 #[tauri::command] pub fn delete_tag(state: State<DbState>, tag: String) -> Result<(), String> { tree_remove(&state.0.tags().map_err(|e| e.to_string())?, &tag) }
 
 
-// TEMPORARY - remove after tenses DB is cleared
-#[tauri::command] pub fn clear_all_tenses(state: State<DbState>) -> Result<usize, String> {
-    crate::db::clear_all_tenses(&state.0).map_err(|e| e.to_string())
-}
-
 // ─── Session & Exercise Logs ───────────────────────────────────
 
 #[tauri::command] pub fn get_vocabulary_session_logs(state: State<DbState>) -> Result<Vec<Value>, String> {
