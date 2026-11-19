@@ -121,29 +121,10 @@ pub struct DbState(pub Arc<AppDb>);
 #[tauri::command] pub fn add_tag(state: State<DbState>, tag: String) -> Result<(), String> { state.0.tags().map_err(|e| e.to_string())?.insert(tag.as_bytes(), b"1").map_err(|e| e.to_string())?; Ok(()) }
 #[tauri::command] pub fn delete_tag(state: State<DbState>, tag: String) -> Result<(), String> { tree_remove(&state.0.tags().map_err(|e| e.to_string())?, &tag) }
 
-// ─── Tenses ────────────────────────────────────────────────────
 
-#[tauri::command] pub fn get_tenses(state: State<DbState>, tenses_id: String) -> Result<Option<Value>, String> {
-    let tree = state.0.tenses().map_err(|e| e.to_string())?;
-    match tree.get(tenses_id.as_bytes()).map_err(|e| e.to_string())? {
-        Some(data) => Ok(Some(serde_json::from_slice(&data).map_err(|e| e.to_string())?)),
-        None => Ok(None),
-    }
-}
-#[tauri::command] pub fn save_tenses(state: State<DbState>, word_id: String, data: Value) -> Result<String, String> {
-    let tenses_id = data["id"].as_str().map(|s| s.to_string()).unwrap_or_else(AppDb::generate_id);
-    let mut d = data.clone();
-    d["id"] = Value::String(tenses_id.clone());
-    let ttree = state.0.tenses().map_err(|e| e.to_string())?;
-    ttree.insert(tenses_id.as_bytes(), serde_json::to_vec(&d).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
-    // Link to word
-    let vtree = state.0.vocabulary().map_err(|e| e.to_string())?;
-    if let Some(existing) = vtree.get(word_id.as_bytes()).map_err(|e| e.to_string())? {
-        let mut w: Value = serde_json::from_slice(&existing).map_err(|e| e.to_string())?;
-        w["tensesId"] = Value::String(tenses_id.clone());
-        vtree.insert(word_id.as_bytes(), serde_json::to_vec(&w).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
-    }
-    Ok(tenses_id)
+// TEMPORARY - remove after tenses DB is cleared
+#[tauri::command] pub fn clear_all_tenses(state: State<DbState>) -> Result<usize, String> {
+    crate::db::clear_all_tenses(&state.0).map_err(|e| e.to_string())
 }
 
 // ─── Session & Exercise Logs ───────────────────────────────────

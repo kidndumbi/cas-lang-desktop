@@ -118,27 +118,6 @@ async fn handle_migrate(
         }
     }
 
-    if let Some(arr) = body["tenses"].as_array() {
-        if let Ok(tree) = db.tenses() {
-            let mut count = 0;
-            for item in arr {
-                let id = item["id"].as_str().unwrap_or("");
-                if id.is_empty() {
-                    continue;
-                }
-                let key = format!("tense_{}", id);
-                if let Ok(json) = serde_json::to_vec(item) {
-                    if let Err(e) = tree.insert(key.as_bytes(), json) {
-                        eprintln!("Failed to insert tense: {}", e);
-                    } else {
-                        count += 1;
-                    }
-                }
-            }
-            counts.insert("tensesCount".into(), serde_json::Value::Number(count.into()));
-        }
-    }
-
     if let Some(arr) = body["exerciseAiConversations"].as_array() {
         if let Ok(tree) = db.exercise_ai_conversations() {
             let mut count = 0;

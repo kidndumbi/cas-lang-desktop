@@ -26,15 +26,6 @@ import { TauriIpcService } from '../services/tau-ipc.service';
                 <strong style="font-size: 1.1em;">{{ verb.word }}</strong>
                 <span style="color: #888; margin-left: 8px;">— {{ verb.translation }}</span>
               </div>
-              @if (verb.tensesId || verb['tenses_id']) {
-                <span style="font-size: 0.8em; color: #4caf50;">
-                  <mat-icon style="font-size: 16px; vertical-align: middle;">check_circle</mat-icon> Conjugations available
-                </span>
-              } @else {
-                <span style="font-size: 0.8em; color: #ff9800;">
-                  <mat-icon style="font-size: 16px; vertical-align: middle;">pending</mat-icon> No conjugations yet
-                </span>
-              }
             </div>
           </mat-card-content>
         </mat-card>

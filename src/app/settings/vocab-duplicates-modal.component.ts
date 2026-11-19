@@ -12,7 +12,6 @@ export interface VocabDuplicateItem {
   practiceLanguage: string;
   nativeLanguage: string;
   hasInfinitiveTag: boolean;
-  hasTensesId: boolean;
 }
 
 export interface VocabDuplicateGroup {
@@ -57,7 +56,6 @@ export interface VocabDuplicatesModalData {
                   <th style="text-align: left; padding: 6px 12px; border-bottom: 1px solid #e0e0e0;">Translation</th>
                   <th style="text-align: left; padding: 6px 12px; border-bottom: 1px solid #e0e0e0;">Native Lang</th>
                   <th style="text-align: center; padding: 6px 8px; border-bottom: 1px solid #e0e0e0; width: 60px;">Infinitive</th>
-                  <th style="text-align: center; padding: 6px 8px; border-bottom: 1px solid #e0e0e0; width: 60px;">Tenses</th>
                   <th style="text-align: center; padding: 6px 12px; border-bottom: 1px solid #e0e0e0; width: 80px;">Action</th>
                 </tr>
               </thead>
@@ -69,14 +67,6 @@ export interface VocabDuplicatesModalData {
                     <td style="padding: 6px 8px; border-bottom: 1px solid #f0f0f0; text-align: center;">
                       @if (item.hasInfinitiveTag) {
                         <mat-icon style="font-size: 18px; color: #1976d2;" title="Has infinitive tag">check_circle</mat-icon>
-                      }
-                      @else {
-                        <span style="color: #bdbdbd;">—</span>
-                      }
-                    </td>
-                    <td style="padding: 6px 8px; border-bottom: 1px solid #f0f0f0; text-align: center;">
-                      @if (item.hasTensesId) {
-                        <mat-icon style="font-size: 18px; color: #4caf50;" title="Has tenses ID">check_circle</mat-icon>
                       }
                       @else {
                         <span style="color: #bdbdbd;">—</span>
